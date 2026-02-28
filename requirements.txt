@@ -5,13 +5,11 @@ matplotlib
 seaborn
 openpyxl
 statsmodels
-spicy
+scipy
 scikit-learn
 pyarrow
 xgboost
 joblib
-apache-airflow
-openpyxl
 pyspark==3.4.1
 pytest
 pytest-cov
@@ -22,5 +20,9 @@ black
 isort
 s3fs
 fsspec
-mlflow==2.8.1
+mlflow>=2.12,<3
 boto3
+streamlit
+great_expectations
+alembic
+sqlalchemy

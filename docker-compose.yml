@@ -14,6 +14,11 @@ services:
     command: server /data --console-address ":9001"
     volumes:
       - minio_data:/data
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:9000/minio/health/live" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   # 2. MLflow (Model Tracking)
   mlflow:
@@ -29,6 +34,57 @@ services:
     command: mlflow server --backend-store-uri sqlite:///mlflow.db --default-artifact-root s3://mlflow/ --host 0.0.0.0
     depends_on:
       - minio
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:5000/" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # 3. FastAPI (Model Serving)
+  api:
+    build:
+      context: .
+      dockerfile: deploy/api/Dockerfile
+    container_name: cdp_api
+    ports:
+      - "8000:8000"
+    environment:
+      # Point API to in-compose services
+      MLFLOW_S3_ENDPOINT_URL: http://minio:9000
+      AWS_ACCESS_KEY_ID: admin
+      AWS_SECRET_ACCESS_KEY: password
+      MLFLOW_TRACKING_URI: http://mlflow:5000
+      MODEL_NAME: TelcoChurnModel
+      MODEL_VERSION: "1"
+    depends_on:
+      - minio
+      - mlflow
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:8000/" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  streamlit:
+    build:
+      context: ./deploy/streamlit
+      dockerfile: Dockerfile
+    container_name: cdp_streamlit
+    ports:
+      - "8501:8501"
+    environment:
+      MLFLOW_S3_ENDPOINT_URL: http://minio:9000
+      AWS_ACCESS_KEY_ID: admin
+      AWS_SECRET_ACCESS_KEY: password
+      PROCESSED_FEATURES_PATH: s3://datalake/processed/features
+    depends_on:
+      - minio
+      - mlflow
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:8501/" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
 volumes:
   minio_data:

@@ -30,6 +30,18 @@ jobs:
         pip install -r requirements.txt
         pip install pyspark==3.4.1
 
-    # Chạy Spark qua Launcher (Launcher sẽ bypass setup windows)
+    - name: Lint (ruff)
+      run: ruff check .
+
+    - name: Format check (black)
+      run: black --check .
+
+    - name: Type check (mypy)
+      run: mypy src
+
+    - name: Run tests
+      run: pytest -q
+
+    # Run Spark via Launcher (Launcher bypasses Windows setup)
     - name: Run ETL Job
       run: python launcher.py

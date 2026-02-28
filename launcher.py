@@ -2,18 +2,18 @@ import sys
 import os
 import platform
 
-# Đảm bảo Python tìm thấy modules
+# Ensure Python can locate project modules
 sys.path.append(os.getcwd())
 
 # Import script gốc
 try:
     import spark_jobs.clean_data_spark as original_script
 except ImportError:
-    # Fallback xử lý đường dẫn
+    # Fallback: adjust path for import resolution
     sys.path.append(os.path.dirname(os.getcwd()))
     import spark_jobs.clean_data_spark as original_script
 
-# Hàm giả để thay thế hàm setup Windows
+# Dummy replacement for Windows-only setup function
 
 
 def dummy_setup(base_dir):
@@ -24,7 +24,7 @@ def dummy_setup(base_dir):
 # LOGIC MONKEY PATCHING
 if platform.system() != "Windows":
     print(f"⚙️ Applying cross-platform patch for {platform.system()}...")
-    # Ghi đè hàm setup_windows_env bằng hàm rỗng
+    # Override Windows setup function with no-op on non-Windows
     original_script.setup_windows_env = dummy_setup
 else:
     print("🪟 Windows detected. Using original configuration.")

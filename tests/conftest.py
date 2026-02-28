@@ -12,7 +12,22 @@ def set_log_level():
 @pytest.fixture
 def tmp_df():
     """Return a small DataFrame used in tests."""
-    return pd.DataFrame({"Total Charges": ["100", "200", "300"], "Monthly Charges": [50.0, 75.0, 100.0], "Tenure Months": [1, 10, 24], "Partner": ["Yes", "No", "Yes"]})
+    # Provide a minimal but schema-compliant DataFrame matching RawTelcoSchema
+    return pd.DataFrame(
+        {
+            "CustomerID": ["C1", "C2", "C3"],
+            "Gender": ["Male", "Female", "Male"],
+            "SeniorCitizen": [0, 1, 0],
+            "Partner": ["Yes", "No", "Yes"],
+            "Dependents": ["No", "No", "Yes"],
+            "Tenure Months": [1, 10, 24],
+            "PhoneService": ["Yes", "Yes", "No"],
+            "InternetService": ["DSL", "Fiber Optic", "No"],
+            "MonthlyCharges": [50.0, 75.0, 100.0],
+            "TotalCharges": [100.0, 750.0, 2400.0],
+            "Churn": [0, 1, 0],
+        }
+    )
 
 
 @pytest.fixture

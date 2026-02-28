@@ -1,4 +1,4 @@
-"""ETL cleaning helpers extracted from notebook transforms.
+﻿"""ETL cleaning helpers extracted from notebook transforms.
 
 This module contains small, testable functions that perform dataset
 cleaning steps. Functions are idempotent (work on a copy) and include
@@ -9,24 +9,45 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 from typing import Iterable, Optional, Sequence, Union
-# no longer using is_categorical_dtype to avoid deprecation; use isinstance checks
 
 import pandas as pd
 
 logger = logging.getLogger(__name__)
+
+# Helper: resolve common alternate column names (e.g., 'Total Charges' <-> 'TotalCharges')
+_COLUMN_ALIASES = {
+    "Total Charges": "TotalCharges",
+    "TotalCharges": "Total Charges",
+    "Monthly Charges": "MonthlyCharges",
+    "MonthlyCharges": "Monthly Charges",
+}
+
+
+def _resolve_column(out: pd.DataFrame, col: str) -> str | None:
+    """Return the actual column name present in DataFrame for known aliases.
+
+    If the requested column exists, return it. Otherwise, check common
+    aliases and return the first match. If none found, return None.
+    """
+    if col in out.columns:
+        return col
+    alt = _COLUMN_ALIASES.get(col)
+    if alt and alt in out.columns:
+        return alt
+    return None
 
 
 def load_csv(path: Union[str, Path]) -> pd.DataFrame:
     """Load a CSV file into a DataFrame.
 
     Args:
-            path: Path or path-like to CSV file.
+        path: Path or path-like to CSV file.
 
     Returns:
-            pandas.DataFrame with file contents.
+        pandas.DataFrame with file contents.
 
     Raises:
-            ValueError: If the file does not exist or is not readable.
+        ValueError: If the file does not exist or is not readable.
     """
     p = Path(path)
     if not p.exists():
@@ -50,9 +71,10 @@ def convert_types(df: pd.DataFrame, numeric_cols: Optional[Sequence[str]] = None
         numeric_cols = ["Total Charges", "Monthly Charges", "Tenure Months"]
     out = df.copy()
     for col in numeric_cols:
-        if col in out.columns:
-            logger.debug("Converting column to numeric: %s", col)
-            out[col] = pd.to_numeric(out[col], errors="coerce")
+        actual = _resolve_column(out, col) or col
+        if actual in out.columns:
+            logger.debug("Converting column to numeric: %s (resolved: %s)", col, actual)
+            out[actual] = pd.to_numeric(out[actual], errors="coerce")
     return out
 
 
@@ -60,17 +82,24 @@ def drop_invalid_rows(df: pd.DataFrame, subset: Optional[Iterable[str]] = None) 
     """Drop rows with missing values in `subset` columns.
 
     Args:
-            df: Input DataFrame (not modified).
-            subset: Iterable of column names to check for NA. Defaults to ("Total Charges",).
+        df: Input DataFrame (not modified).
+        subset: Iterable of column names to check for NA. Defaults to ("Total Charges",).
 
     Returns:
-            New DataFrame with rows containing NA in subset dropped.
+        New DataFrame with rows containing NA in subset dropped.
     """
     if subset is None:
         subset = ("Total Charges",)
     out = df.copy()
     before = len(out)
-    out = out.dropna(subset=list(subset))
+    # Resolve aliases to actual columns present
+    resolved = []
+    for s in list(subset):
+        actual = _resolve_column(out, s)
+        if actual:
+            resolved.append(actual)
+    if resolved:
+        out = out.dropna(subset=resolved)
     after = len(out)
     logger.debug("drop_invalid_rows: before=%d after=%d", before, after)
     return out
@@ -82,13 +111,14 @@ def map_booleans(df: pd.DataFrame, cols: Optional[Sequence[str]] = None) -> pd.D
     Preserves NaN in the source and returns a new DataFrame copy.
     """
     if cols is None:
-        cols = ["Partner", "Senior Citizen", "Dependents"]
+        cols = ["Partner", "Senior Citizen", "SeniorCitizen", "Dependents"]
     mapping = {"Yes": 1, "No": 0}
     out = df.copy()
     for col in cols:
-        if col in out.columns:
-            logger.debug("Mapping boolean-like column: %s", col)
-            out[col] = out[col].map(mapping)
+        actual = _resolve_column(out, col) or col
+        if actual in out.columns:
+            logger.debug("Mapping boolean-like column: %s (resolved: %s)", col, actual)
+            out[actual] = out[actual].map(mapping)
     return out
 
 
@@ -102,28 +132,33 @@ def create_features(df: pd.DataFrame) -> pd.DataFrame:
     """
     out = df.copy()
     # tenure bins (example boundaries)
-    if "Tenure Months" in out.columns:
+    tenure_col = _resolve_column(out, "Tenure Months")
+    if tenure_col and tenure_col in out.columns:
         try:
             out["tenure_bin"] = pd.cut(
-                out["Tenure Months"], bins=[-1, 6, 12, 24, 48, 96], labels=["0-6", "7-12", "13-24", "25-48", "49+"], include_lowest=True
+                out[tenure_col],
+                bins=[-1, 6, 12, 24, 48, 96],
+                labels=["0-6", "7-12", "13-24", "25-48", "49+"],
+                include_lowest=True,
             )
         except Exception:  # pragma: no cover - defensive
             logger.exception("Could not create tenure_bin")
             out["tenure_bin"] = None
     # monthly charges quantile binning
-    if "Monthly Charges" in out.columns:
+    monthly_col = _resolve_column(out, "Monthly Charges")
+    if monthly_col and monthly_col in out.columns:
         try:
-            out["monthly_bin"] = pd.qcut(out["Monthly Charges"].rank(
-                method="first"), q=4, duplicates="drop")
-        except ValueError:
-            logger.warning(
-                "monthly_bin cannot be created (insufficient unique values)")
+            if out[monthly_col].nunique() < 4:
+                out["monthly_bin"] = None
+            else:
+                out["monthly_bin"] = pd.qcut(out[monthly_col], q=4, duplicates="drop")
+        except Exception:
+            logger.warning("monthly_bin cannot be created (insufficient unique values)")
             out["monthly_bin"] = None
     # cltv binning when CLTV exists
     if "CLTV" in out.columns:
         try:
-            out["cltv_bin"] = pd.qcut(out["CLTV"].fillna(
-                out["CLTV"].median()), q=4, duplicates="drop")
+            out["cltv_bin"] = pd.qcut(out["CLTV"].fillna(out["CLTV"].median()), q=4, duplicates="drop")
         except Exception:
             logger.warning("cltv_bin could not be created")
             out["cltv_bin"] = None
@@ -167,12 +202,10 @@ def save_parquet(df: pd.DataFrame, out_dir: Union[str, Path], partition_col: Opt
 
     if partition_col and partition_col in df.columns:
         tmp = df.copy()
-        # Try to convert to datetime.date if possible
         try:
-            tmp[partition_col] = pd.to_datetime(tmp[partition_col]).dt.date
+            tmp[partition_col] = pd.to_datetime(tmp[partition_col], format="%Y-%m-%d", errors="raise").dt.date
         except Exception as exc:  # pragma: no cover - defensive
-            logger.error(
-                "Could not convert partition column %s to date: %s", partition_col, exc)
+            logger.error("Could not convert partition column %s to date: %s", partition_col, exc)
             raise
         for part_val, part_df in tmp.groupby(partition_col):
             filename = out_path / f"{partition_col}={part_val}.parquet"
@@ -182,7 +215,6 @@ def save_parquet(df: pd.DataFrame, out_dir: Union[str, Path], partition_col: Opt
     else:
         filename = out_path / "cleaned_telco.parquet"
         logger.debug("Writing DataFrame to single file: %s", filename)
-        # Convert interval-like columns to strings before writing to prevent pyarrow errors
         tmp = _convert_interval_like_columns(df)
         tmp.to_parquet(filename, index=False)
     return out_path

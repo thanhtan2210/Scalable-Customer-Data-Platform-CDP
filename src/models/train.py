@@ -5,7 +5,7 @@ from sklearn.model_selection import train_test_split
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import accuracy_score, classification_report
 
-# Đường dẫn
+# Paths
 BASE_DIR = os.path.dirname(os.path.dirname(
     os.path.dirname(os.path.abspath(__file__))))
 INPUT_PATH = "s3://datalake/processed/features"
@@ -15,7 +15,7 @@ MODEL_DIR = os.path.join(BASE_DIR, 'models')
 def train():
     print("--- Starting Training Job ---")
     if not os.path.exists(INPUT_PATH):
-        print(f"ERROR: Không tìm thấy data tại {INPUT_PATH}")
+        print(f"ERROR: Data not found at {INPUT_PATH}")
         return
 
     # 1. Load Data
@@ -23,7 +23,7 @@ def train():
     print(f"Loaded {len(df)} rows.")
 
     # 2. Prepare X, y
-    # Loại bỏ customerID vì nó không dự đoán được churn
+    # Drop customerID since it does not predict churn
     X = df.drop(columns=['customerID', 'Churn'])
     y = df['Churn']
 

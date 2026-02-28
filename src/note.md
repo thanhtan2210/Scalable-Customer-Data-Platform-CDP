@@ -1,8 +1,8 @@
-- Reproducibility: code trong module trả về cùng output với cùng input — không còn “cell state” phụ thuộc vào chạy notebook.
-- Testability: hàm nhỏ có thể unit-test dễ dàng (convert dtypes, drop NA, mapping, feature engineering).
-- Maintainability: code được tổ chức, dễ refactor, đọc, review và version control.
-- Reusability: dùng lại trong scripts, thêm vào DAG (Airflow), hoặc chạy bằng CLI/script hàng ngày.
-- Automation / CI: dễ tích hợp kiểm thử và deploy: chạy lint, pytest, build pipeline.
-- Observability & Error handling: thêm logging, retry, idempotency cho production jobs.
-- Parameterization & configurability: dễ thay đổi path/partitioning/threshold mà không sửa notebook cells.
-- Performance & scaling: tách I/O (chunking, parquet, partition) và logic giúp dễ tối ưu.
+- Reproducibility: modules return the same outputs for the same inputs — no hidden notebook "cell state".
+- Testability: small functions are easy to unit test (convert dtypes, drop NA, mapping, feature engineering).
+- Maintainability: organized code that’s easier to refactor, read, review, and version control.
+- Reusability: reuse in scripts, add to Airflow DAGs, or run via CLI/daily jobs.
+- Automation / CI: integrate linting, pytest, and pipeline builds for deployability.
+- Observability & Error handling: add logging, retries, and idempotency for production jobs.
+- Parameterization & configurability: change paths/partitioning/thresholds without editing notebook cells.
+- Performance & scaling: separate I/O (chunking, parquet, partition) and logic to optimize more easily.

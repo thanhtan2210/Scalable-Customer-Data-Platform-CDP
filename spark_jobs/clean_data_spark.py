@@ -15,14 +15,14 @@ except ImportError:
 
 
 def setup_windows_env(base_dir):
-    """Cấu hình biến môi trường cho Spark trên Windows"""
+    """Configure environment variables for Spark on Windows"""
     # Hadoop
     hadoop_path = os.path.join(base_dir, 'bin', 'hadoop')
     os.environ['HADOOP_HOME'] = hadoop_path
 
     if not os.path.exists(os.path.join(hadoop_path, 'bin', 'winutils.exe')):
-        # Chỉ warning chứ không exit, để launcher.py có thể xử lý logic Linux
-        print(f"⚠️ Warning: Không tìm thấy winutils.exe tại {hadoop_path}")
+        # Warn but don't exit so launcher.py can handle Linux logic
+        print(f"⚠️ Warning: winutils.exe not found at {hadoop_path}")
 
     # Java (Auto-detect)
     adoptium_dir = os.path.join(base_dir, 'bin', 'Eclipse Adoptium')
@@ -33,7 +33,7 @@ def setup_windows_env(base_dir):
             java_path = os.path.join(adoptium_dir, jdk_name)
             os.environ['JAVA_HOME'] = java_path
     except Exception:
-        print("⚠️ Warning: Không tìm thấy JDK 11 local. Dùng Java hệ thống.")
+        print("⚠️ Warning: Local JDK 11 not found. Using system Java.")
 
     # Update Path
     paths = [os.path.join(hadoop_path, 'bin')]
@@ -44,31 +44,29 @@ def setup_windows_env(base_dir):
 
 
 def get_paths():
-    """
-    Trả về đường dẫn S3 (MinIO) để Spark xử lý.
-    """
+    """Return S3 (MinIO) paths for Spark to process."""
     base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-    # ĐƯỜNG DẪN MINIO (S3A)
-    # Đảm bảo bạn đã upload file telco_churn.parquet lên bucket datalake/raw
+    # MinIO paths (S3A)
+    # Ensure 'telco_churn.parquet' is uploaded to bucket datalake/raw
     input_path = "s3a://datalake/raw/telco_churn.parquet"
     output_path = "s3a://datalake/processed/features"
 
-    # QUAN TRỌNG: Phải có dòng return này mới sửa được lỗi NoneType
+    # IMPORTANT: This return prevents NoneType errors in callers
     return base_dir, input_path, output_path
 
 # --- 2. TRANSFORMATION LOGIC ---
 
 
 def clean_dataframe(df):
-    """Hàm chứa toàn bộ logic làm sạch dữ liệu"""
+    """Core data cleaning logic."""
 
-    # A. Chuẩn hóa tên cột
+    # A. Normalize column names
     df = df.select([col(c).alias(c.strip().lower().replace(' ', ''))
                    for c in df.columns])
     cols = df.columns
 
-    # B. Xử lý cột Churn
+    # B. Handle churn column
     if 'churnvalue' in cols:
         df = df.withColumn("Churn", col("churnvalue").cast(IntegerType()))
     elif 'churnlabel' in cols:
@@ -80,7 +78,7 @@ def clean_dataframe(df):
 
     df = df.fillna(0, subset=["Churn"])
 
-    # C. Ép kiểu số
+    # C. Cast numeric columns
     numeric_cols = {'totalcharges': 'TotalCharges',
                     'monthlycharges': 'MonthlyCharges'}
     for src, dest in numeric_cols.items():
@@ -88,25 +86,25 @@ def clean_dataframe(df):
             df = df.withColumn(dest, col(src).cast(
                 DoubleType())).fillna(0.0, subset=[dest])
 
-    # D. Xử lý Tenure
+    # D. Handle tenure
     tenure_col = 'tenuremonths' if 'tenuremonths' in cols else (
         'tenure' if 'tenure' in cols else None)
     if tenure_col:
         df = df.withColumn("tenure", col(tenure_col).cast(IntegerType()))
 
-    # E. Đổi tên ID
+    # E. Rename ID
     if 'customerid' in cols:
         df = df.withColumnRenamed("customerid", "customerID")
 
-    # F. Chọn lọc cột
+    # F. Select columns
     required = ['customerID', 'tenure',
                 'MonthlyCharges', 'TotalCharges', 'Churn']
     final_cols = [c for c in required if c in df.columns]
 
-    # Tạo biến kết quả TRƯỚC khi validate
+    # Create result before validation
     df_result = df.select(*final_cols)
 
-    # G. Validate Data
+    # G. Validate data
     if pa:
         try:
             print("🔍 Validating data schema...")
@@ -131,7 +129,7 @@ def run():
 
     print("🔌 Configuring Spark for MinIO/S3...")
 
-    # Cấu hình Spark + AWS Jars để nối MinIO
+    # Configure Spark + AWS Jars to connect to MinIO
     spark = SparkSession.builder \
         .appName("CDP_Telco_ETL") \
         .master("local[*]") \

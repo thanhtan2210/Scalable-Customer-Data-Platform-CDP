@@ -1,0 +1,13 @@
+{
+    "expectation_suite_name": "raw_telco_suite",
+    "meta": {},
+    "expectations": [
+        {
+            "expectation_type": "expect_table_row_count_to_be_between",
+            "kwargs": {
+                "min_value": 100
+            },
+            "meta": {}
+        }
+    ]
+}

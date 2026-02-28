@@ -5,12 +5,12 @@ from sklearn.model_selection import train_test_split
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import accuracy_score
 
-# Setup đường dẫn
+# Paths setup
 BASE_DIR = os.path.dirname(os.path.dirname(
     os.path.dirname(os.path.abspath(__file__))))
 
-# Đường dẫn MinIO
-# LƯU Ý QUAN TRỌNG: Pandas dùng s3:// chứ không dùng s3a://
+# MinIO paths
+# IMPORTANT: Pandas uses s3:// (not s3a://)
 INPUT_PATH = "s3://datalake/processed/features"
 MODEL_DIR = os.path.join(BASE_DIR, 'models')
 
@@ -18,11 +18,11 @@ MODEL_DIR = os.path.join(BASE_DIR, 'models')
 def train():
     print("--- Starting Training Job (MinIO Version) ---")
 
-    # 1. Load Data trực tiếp từ MinIO
+    # 1. Load data directly from MinIO
     try:
         print(f"🚀 Reading data from MinIO: {INPUT_PATH}")
 
-        # Pandas tự động dùng s3fs để đọc S3 thông qua storage_options
+        # Pandas uses s3fs to read S3 via storage_options
         df = pd.read_parquet(
             INPUT_PATH,
             storage_options={
@@ -33,15 +33,15 @@ def train():
         )
         print(f"✅ Loaded {len(df)} rows.")
     except Exception as e:
-        print(f"❌ Lỗi đọc file từ MinIO: {e}")
-        print("💡 Gợi ý: Kiểm tra xem Docker MinIO có đang chạy không?")
-        print("💡 Gợi ý: Kiểm tra xem Spark Job đã ghi file vào 'datalake/processed/features' chưa?")
+        print(f"❌ Error reading file from MinIO: {e}")
+        print("💡 Hint: Is Docker MinIO running?")
+        print("💡 Hint: Has the Spark job written to 'datalake/processed/features'?")
         return
 
     # 2. Prepare X, y
     if 'Churn' not in df.columns:
         print(
-            f"ERROR: Không tìm thấy cột 'Churn'. Các cột hiện có: {list(df.columns)}")
+            f"ERROR: Column 'Churn' not found. Available columns: {list(df.columns)}")
         return
 
     X = df.drop(columns=['customerID', 'Churn'])
@@ -63,7 +63,7 @@ def train():
     acc = accuracy_score(y_test, y_pred)
     print(f"✅ Model Accuracy: {acc:.4f}")
 
-    # 6. Save Model Local (Sau này có thể nâng cấp save lên MLflow)
+    # 6. Save model locally (can upgrade to MLflow later)
     os.makedirs(MODEL_DIR, exist_ok=True)
     save_path = os.path.join(MODEL_DIR, 'churn_model.joblib')
     joblib.dump(model, save_path)

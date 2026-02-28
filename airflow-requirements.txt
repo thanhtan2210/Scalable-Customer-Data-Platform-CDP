@@ -1,0 +1,8 @@
+# Airflow dependencies (kept separate to avoid version conflicts)
+# Install with: pip install -r airflow-requirements.txt
+# Or use Airflow constraints: pip install apache-airflow==2.7.3 --constraint "https://raw.githubusercontent.com/apache/airflow/constraints-2.7.3/constraints-3.10.txt"
+
+apache-airflow==2.7.3
+apache-airflow-providers-apache-spark==4.1.2
+apache-airflow-providers-amazon==8.0.1
+apache-airflow-providers-http==4.4.3

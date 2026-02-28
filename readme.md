@@ -1,3 +1,57 @@
+# Scalable Customer Data Platform (CDP)
+Goal: build a scalable customer data processing platform (50M users target) for Data Engineering (DE), Data Science (DS), and MLOps.
+## Overview
+- Goal: Ingest & build a clean feature table for downstream modeling and analytics.
+- Key constraints: S3 as raw + feature storage (Parquet), Spark for heavy ETL, partitioning strategy, eventual Iceberg/Delta Lake for ACID & schema evolution.
+- CV line: "Data Warehousing (BigQuery/Simulating Iceberg architecture) — built S3 Parquet pipeline with Spark for data cleaning & dedup".
+## Stage 1 — Data Engineering (DE)
+- Purpose: Standardize raw data, remove noise and duplicates, and create a well-partitioned feature table for downstream jobs.
+	2. Cleaning (Spark):
+	- Schema enforcement (explicit schema, types).
+	- Null handling and conversions (e.g., Total Charges numeric).
+	- Normalize categorical values with canonical mapping.
+	- Outlier detection/handling for numeric features (capping / winsorize).
+	3. Duplicate handling:
+	- Dedup based on stable keys (CustomerID + event_timestamp / last_updated).
+	- Use windowing to pick latest record:
+	- Partition by CustomerID, order by last_updated desc, row_number() == 1.
+	4. Partitioning & Storage:
+	- Write Parquet to S3 with partition layout like: s3://bucket/cdp/customer_features/year=YYYY/month=MM/day=DD/
+	- Partition keys: date (event_date) & maybe region or product line (low-cardinality).
+	- Avoid partition by high-cardinality keys (CustomerID).
+	5. Metadata & Format:
+	- Start on Parquet; evaluate Delta Lake or Apache Iceberg for ACID/merge/schema evolution.
+	- For local testing, simulate Iceberg/Delta with Docker + Spark (set up catalog).
+	6. Orchestration:
+	- Use Airflow to schedule jobs (daily incremental, hourly micro-batches).
+	- Jobs: ingest -> validate (Great Expectations) -> transform (Spark) -> write feature table -> register metadata (Glue/Metastore or Iceberg catalog).
+- Practical checks:
+	- Validate row counts, null rates, detect sudden changes (data drift).
+	- Compact small Parquet files after many small writes.
+### Best practices for partitioning + file sizing:
+### Delta Lake / Apache Iceberg notes (local with Docker):
+- Why: ACID, time travel, schema evolution, MERGE.
+- Local testing: run Spark with delta-core or iceberg-spark runtime jar:
+	- Example with Delta Lake (Spark + delta-core):
+	- Add delta-core jar to Spark session and write as `format("delta")`.
+	- Example with Iceberg, configure Spark session:
+	- `spark.sql.catalog.local = 'org.apache.iceberg.spark.SparkCatalog'` with `catalog-impl` set to `hadoop`.
+- If infra limited: keep Parquet on S3 and simulate Iceberg via partitioned layout + metadata.
+### Airflow DAG (skeleton)
+### Validation & QA:
+## Stage 2 — Data Science (DS)
+- Use the feature table from DE; standard pipeline: train/test split, model baseline (Logistic), model improvements (XGBoost/LightGBM), hyperparameter tune, calibration, SHAP explanations.
+- Persist model + preprocessing (joblib / ONNX).
+## Stage 3 — MLOps / Serving & BI
+- Export model & feature pipeline; serve via FastAPI or model server (SageMaker / TorchServe).
+- Online inference: retrieve latest features (via feature store or read Parquet & filter).
+- Batch/Streaming scores: schedule daily batch job to score all customers and write predictions to CDP (S3/warehouse/DB).
+## Tech Stack recommendation
+- CV line for JD: "Built Scalable Customer Data Platform (CDP) using PySpark & Airflow; wrote robust cleaning & dedup pipelines and stored partitioned Parquet on S3 (Delta/Iceberg simulation), enabling downstream model training for churn predictions."
+## Deliverables
+## Notes / Fallback
+- If Iceberg/Delta not feasible in current infra: use Parquet on S3 + strong partitioning + metadata in Glue/Metastore.
+- Record steps in CV: highlight S3 Parquet with simulated Iceberg architecture if used BigQuery as warehouse.
 # Context
 A fictional telco company that provided home phone and Internet services to 7043 customers in California in Q3.
 
@@ -79,3 +133,13 @@ https://community.ibm.com/accelerators/?context=analytics&query=telco%20churn&ty
 
 There are several related datasets as documented in:
 https://community.ibm.com/community/user/businessanalytics/blogs/steven-macko/2018/09/12/base-samples-for-ibm-cognos-analytics
+
+---
+
+## Project Docs
+- Architecture: docs/architecture.md
+- Getting Started: docs/getting_started.md
+- Airflow DAG: docs/airflow_dag.md
+- Configuration: docs/configuration.md
+- Data Quality & Lineage: docs/data_quality.md
+- Deployment: docs/deployment.md

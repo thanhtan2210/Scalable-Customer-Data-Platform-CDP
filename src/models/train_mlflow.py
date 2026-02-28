@@ -6,14 +6,14 @@ from sklearn.model_selection import train_test_split
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import accuracy_score
 
-# --- CẤU HÌNH ---
+# --- CONFIGURATION ---
 INPUT_PATH = "s3://datalake/processed/features"
 
-# Cấu hình MLflow
+# MLflow configuration
 mlflow.set_tracking_uri("http://localhost:5000")
 mlflow.set_experiment("CDP_Churn_Prediction")
 
-# Cấu hình MinIO cho MLflow
+# MinIO configuration for MLflow
 os.environ["MLFLOW_S3_ENDPOINT_URL"] = "http://localhost:9000"
 os.environ["AWS_ACCESS_KEY_ID"] = "admin"
 os.environ["AWS_SECRET_ACCESS_KEY"] = "password"
@@ -70,10 +70,10 @@ def train():
         print(f"✅ Model Accuracy: {acc:.4f}")
         mlflow.log_metric("accuracy", acc)
 
-        # D. Log Model (SỬA ĐOẠN NÀY ĐỂ HẾT WARNING)
+        # D. Log Model
         print("💾 Saving model to MLflow/MinIO...")
 
-        # Dùng keyword arguments rõ ràng
+        # Use explicit keyword arguments
         mlflow.sklearn.log_model(
             sk_model=model,
             artifact_path="random_forest_model",

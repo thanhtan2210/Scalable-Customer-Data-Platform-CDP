@@ -11,6 +11,7 @@ try:
         drop_invalid_rows,
         map_booleans,
         save_parquet,
+        create_features,
     )
 except ModuleNotFoundError:
     # When executed directly (python tests/test_cleaning.py) the working dir
@@ -23,6 +24,7 @@ except ModuleNotFoundError:
         drop_invalid_rows,
         map_booleans,
         save_parquet,
+        create_features,
     )
 
 
