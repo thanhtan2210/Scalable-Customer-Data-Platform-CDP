@@ -13,7 +13,7 @@ def convert():
     print(f"Reading from {INPUT_FILE}...")
 
     try:
-        # Đọc file Excel
+        # Read Excel file
         df = pd.read_excel(INPUT_FILE, engine='openpyxl')
     except FileNotFoundError:
         print(f"Error: File not found at {INPUT_FILE}")

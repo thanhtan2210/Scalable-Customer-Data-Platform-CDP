@@ -1,7 +1,7 @@
 version: '3.7'
 
 services:
-  # 1. MinIO (S3 Compatible Storage) - Thay thế lưu file local
+  # 1. MinIO (S3 Compatible Storage) - Replaces local file storage
   minio:
     image: minio/minio:latest
     container_name: cdp_minio

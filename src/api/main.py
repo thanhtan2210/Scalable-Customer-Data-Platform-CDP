@@ -39,7 +39,7 @@ class CustomerRequest(BaseModel):
     tenure: int
     MonthlyCharges: float
     TotalCharges: float
-    # Thêm các feature khác nếu cần
+    # Add other features if needed
 
 
 @asynccontextmanager

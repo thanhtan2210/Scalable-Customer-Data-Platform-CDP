@@ -34,7 +34,7 @@ def upload_to_minio():
         fs.put(local_path, s3_path)
         print("✅ Upload successful!")
 
-        # Kiểm tra lại xem file có tồn tại không
+        # Verify if the file exists
         if fs.exists(s3_path):
             print(f"🔍 Confirmed file exists on MinIO: {s3_path}")
             print(f"📦 Size: {fs.info(s3_path)['size']} bytes")
