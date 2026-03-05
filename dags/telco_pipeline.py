@@ -13,8 +13,9 @@ Or use constraints: https://airflow.apache.org/docs/apache-airflow/stable/instal
 """
 from src.main import run_pipeline
 from src.models.train_mlflow import train as train_mlflow_model
-from scripts.ingest_to_minio import upload_to_minio as ingest_to_minio_upload
-from scripts.csv_to_parquet import convert as csv_to_parquet_convert
+# Updated imports for new job structure
+from src.jobs.ingest_to_minio_job import upload_to_minio as ingest_to_minio_upload
+from src.jobs.ingest_job import convert as csv_to_parquet_convert
 import sys
 from datetime import datetime, timedelta
 

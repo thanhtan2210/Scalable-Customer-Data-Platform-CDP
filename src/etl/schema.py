@@ -1,4 +1,4 @@
-﻿"""Schema validation for raw and processed telco data.
+"""Schema validation for raw and processed telco data.
 
 This module defines Pandera schemas for strict validation of:
 - Raw data: ensure types, constraints, and enums before processing
@@ -77,21 +77,25 @@ def get_schema_report(df: pd.DataFrame, schema: DataFrameSchema) -> dict:
             continue
 
         col_data = df[col_name]
+        n_rows = len(df)
+        null_count = int(col_data.isnull().sum())
+        
         stats = {
             "dtype": str(col_data.dtype),
-            "null_count": int(col_data.isnull().sum()),
-            "null_pct": float(col_data.isnull().sum()) / max(len(df), 1),
+            "null_count": null_count,
+            "null_pct": float(null_count / n_rows) if n_rows > 0 else 0.0,
             "unique_count": int(col_data.nunique()),
         }
 
-        if getattr(col, "checks", None):
-            for check in col.checks:
+        # Check if checks attribute exists and is not None
+        checks = getattr(col, "checks", [])
+        if checks:
+            for check in checks:
                 try:
                     check(col_data)
                 except Exception as e:
                     report["valid"] = False
-                    report["errors"].append(
-                        f"Column {col_name} check failed: {e}")
+                    report["errors"].append(f"Column {col_name} check failed: {str(e)}")
 
         report["column_stats"][col_name] = stats
 

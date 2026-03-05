@@ -14,8 +14,8 @@ COPY requirements.txt /app/requirements-streamlit.txt
 RUN pip install --no-cache-dir -r requirements-streamlit.txt
 
 # Copy the dashboard
-COPY Sales_Dashboard /app/Sales_Dashboard
+COPY src/dashboard /app/src/dashboard
 
 EXPOSE 8501
 
-CMD ["streamlit", "run", "Sales_Dashboard/streamlit_app.py", "--server.port=8501", "--server.address=0.0.0.0"]
+CMD ["streamlit", "run", "src/dashboard/streamlit_app.py", "--server.port=8501", "--server.address=0.0.0.0"]
