@@ -17,7 +17,6 @@ from scripts.ingest_to_minio import upload_to_minio as ingest_to_minio_upload
 from scripts.csv_to_parquet import convert as csv_to_parquet_convert
 import sys
 from datetime import datetime, timedelta
-import os
 
 from airflow import DAG
 from airflow.operators.python import PythonOperator

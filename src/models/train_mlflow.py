@@ -80,7 +80,7 @@ def train():
             registered_model_name="TelcoChurnModel"
         )
 
-        print(f"✨ Done! View results at http://localhost:5000")
+        print("✨ Done! View results at http://localhost:5000")
 
 
 if __name__ == "__main__":

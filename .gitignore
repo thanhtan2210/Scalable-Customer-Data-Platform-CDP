@@ -16,3 +16,4 @@ hadoop_libs/
 # IDE settings
 .vscode/
 .idea/
+node_modules

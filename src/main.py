@@ -15,7 +15,7 @@ from src.etl.cleaning import (
 from src.etl.schema import validate_raw, validate_processed
 from src.etl.lineage import DataLineageRegistry, log_dataframe_transformation
 from src.etl.incremental import IncrementalProcessor
-from src.etl.observability import MetricsCollector, SLAValidator, DataQualityMetrics
+from src.etl.observability import MetricsCollector, SLAValidator
 from src.etl.partitioning import (
     validate_partition_layout,
     detect_partition_skew,
@@ -208,7 +208,7 @@ def run_pipeline(
             f"   Row reduction: {(len(df_raw) - len(df_features)) / len(df_raw) * 100:.1f}%")
 
         if track_lineage:
-            logger.info(f"\n📊 Lineage Registry:")
+            logger.info("\n📊 Lineage Registry:")
             lineage_stats = lineage_registry.get_statistics()
             logger.info(
                 f"   Total transformations: {lineage_stats['total_transformations']}")

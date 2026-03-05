@@ -49,7 +49,6 @@ def test_load_csv_missing_file_raises_value_error():
 
 def test_functions_are_idempotent(tmp_df):
     """Ensure each transformation does not modify the original DataFrame in-place."""
-    import copy
 
     orig = tmp_df.copy()
     working = tmp_df.copy()

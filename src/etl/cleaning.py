@@ -73,7 +73,8 @@ def convert_types(df: pd.DataFrame, numeric_cols: Optional[Sequence[str]] = None
     for col in numeric_cols:
         actual = _resolve_column(out, col) or col
         if actual in out.columns:
-            logger.debug("Converting column to numeric: %s (resolved: %s)", col, actual)
+            logger.debug(
+                "Converting column to numeric: %s (resolved: %s)", col, actual)
             out[actual] = pd.to_numeric(out[actual], errors="coerce")
     return out
 
@@ -117,7 +118,8 @@ def map_booleans(df: pd.DataFrame, cols: Optional[Sequence[str]] = None) -> pd.D
     for col in cols:
         actual = _resolve_column(out, col) or col
         if actual in out.columns:
-            logger.debug("Mapping boolean-like column: %s (resolved: %s)", col, actual)
+            logger.debug(
+                "Mapping boolean-like column: %s (resolved: %s)", col, actual)
             out[actual] = out[actual].map(mapping)
     return out
 
@@ -151,14 +153,17 @@ def create_features(df: pd.DataFrame) -> pd.DataFrame:
             if out[monthly_col].nunique() < 4:
                 out["monthly_bin"] = None
             else:
-                out["monthly_bin"] = pd.qcut(out[monthly_col], q=4, duplicates="drop")
+                out["monthly_bin"] = pd.qcut(
+                    out[monthly_col], q=4, duplicates="drop")
         except Exception:
-            logger.warning("monthly_bin cannot be created (insufficient unique values)")
+            logger.warning(
+                "monthly_bin cannot be created (insufficient unique values)")
             out["monthly_bin"] = None
     # cltv binning when CLTV exists
     if "CLTV" in out.columns:
         try:
-            out["cltv_bin"] = pd.qcut(out["CLTV"].fillna(out["CLTV"].median()), q=4, duplicates="drop")
+            out["cltv_bin"] = pd.qcut(out["CLTV"].fillna(
+                out["CLTV"].median()), q=4, duplicates="drop")
         except Exception:
             logger.warning("cltv_bin could not be created")
             out["cltv_bin"] = None
@@ -194,7 +199,7 @@ def save_parquet(df: pd.DataFrame, out_dir: Union[str, Path], partition_col: Opt
                     out_local[c] = out_local[c].astype(str)
                     continue
             # Fallback: object dtype but contains Interval objects
-            if dt == object:
+            if dt is object:
                 sample = out_local[c].dropna().head(10)
                 if any(isinstance(x, pd.Interval) for x in sample):
                     out_local[c] = out_local[c].astype(str)
@@ -203,9 +208,11 @@ def save_parquet(df: pd.DataFrame, out_dir: Union[str, Path], partition_col: Opt
     if partition_col and partition_col in df.columns:
         tmp = df.copy()
         try:
-            tmp[partition_col] = pd.to_datetime(tmp[partition_col], format="%Y-%m-%d", errors="raise").dt.date
+            tmp[partition_col] = pd.to_datetime(
+                tmp[partition_col], format="%Y-%m-%d", errors="raise").dt.date
         except Exception as exc:  # pragma: no cover - defensive
-            logger.error("Could not convert partition column %s to date: %s", partition_col, exc)
+            logger.error(
+                "Could not convert partition column %s to date: %s", partition_col, exc)
             raise
         for part_val, part_df in tmp.groupby(partition_col):
             filename = out_path / f"{partition_col}={part_val}.parquet"

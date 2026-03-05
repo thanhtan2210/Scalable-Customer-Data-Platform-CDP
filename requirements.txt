@@ -26,3 +26,4 @@ streamlit
 great_expectations
 alembic
 sqlalchemy
+psycopg2-binary

@@ -1,5 +1,4 @@
 import os
-import sys
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import col, when, lower
 from pyspark.sql.types import IntegerType, DoubleType
@@ -7,7 +6,6 @@ from pyspark.sql.types import IntegerType, DoubleType
 # Validate import pandera
 try:
     import pandera as pa
-    from pandera.typing import DataFrame, Series
 except ImportError:
     pa = None
 

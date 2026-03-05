@@ -3,12 +3,11 @@
 import json
 import pandas as pd
 import pytest
-from pathlib import Path
 
 from src.etl.schema import validate_raw, validate_processed, get_schema_report, RawTelcoSchema
-from src.etl.lineage import DataLineageRegistry, log_dataframe_transformation
+from src.etl.lineage import DataLineageRegistry
 from src.etl.incremental import IncrementalProcessor
-from src.etl.observability import MetricsCollector, SLAValidator, DataQualityMetrics
+from src.etl.observability import MetricsCollector, SLAValidator
 from src.etl.partitioning import (
     validate_partition_layout,
     detect_partition_skew,
@@ -38,6 +37,10 @@ class TestSchemaValidation:
         # Simulate processed data
         df = tmp_df.copy()
         df["tenure"] = df.get("Tenure Months", df.get("tenure", 0))
+        # Convert categorical raw values to processed numeric flags
+        df["Gender"] = df["Gender"].map({"Male": 1, "Female": 0})
+        df["Partner"] = df["Partner"].map({"Yes": 1, "No": 0})
+        df["Dependents"] = df["Dependents"].map({"Yes": 1, "No": 0})
         result = validate_processed(df)
         assert isinstance(result, pd.DataFrame)
 

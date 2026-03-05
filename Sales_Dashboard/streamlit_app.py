@@ -185,7 +185,7 @@ try:
     client = MlflowClient()
     # Try to find experiment by name
     exp = next((e for e in client.search_experiments(
-        filter_string=f"name = 'CDP_Churn_Prediction'")), None)
+        filter_string="name = 'CDP_Churn_Prediction'")), None)
     if exp:
         runs = client.search_runs([exp.experiment_id], order_by=[
                                   "attributes.start_time DESC"], max_results=1)

@@ -1,5 +1,4 @@
 from pathlib import Path
-from pathlib import Path
 import pandas as pd
 import pytest
 
@@ -53,7 +52,7 @@ def test_run_pipeline_writes_parquet(tmp_csv, tmp_path):
 def test_run_pipeline_with_lineage(tmp_csv, tmp_path):
     """Pipeline should track lineage when enabled."""
     out_dir = tmp_path / "out"
-    df = run_pipeline(
+    _ = run_pipeline(
         str(tmp_csv),
         str(out_dir),
         dry_run=True,
@@ -80,7 +79,7 @@ def test_run_pipeline_with_metrics(tmp_csv, tmp_path):
         "processed_features": {"min_rows": 1, "max_nulls_pct": 1.0, "max_duplicates": 100},
     }
 
-    df = run_pipeline(
+    _ = run_pipeline(
         str(tmp_csv),
         str(out_dir),
         dry_run=True,
