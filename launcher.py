@@ -23,14 +23,14 @@ def run_spark_clean():
     """Execute Spark data cleaning process."""
     print("🚀 Running Spark Data Cleaning...")
     setup_spark_env()
-    from spark_jobs.clean_data_spark import run as spark_run
+    from src.jobs.clean_data_spark import run as spark_run
     spark_run()
 
 def run_ab_service():
     """Start the A/B Testing API service."""
     print("🛰️ Starting A/B Testing Service (FastAPI)...")
     try:
-        subprocess.run([sys.executable, "-m", "uvicorn", "src.api.ab_service:app", "--host", "0.0.0.0", "--port", "8080", "--reload"])
+        subprocess.run([sys.executable, "-m", "uvicorn", "src.api.ab_service:app", "--host", "0.0.0.0", "--port", "8081", "--reload"])
     except KeyboardInterrupt:
         print("\n🛑 Service stopped.")
 
@@ -38,14 +38,14 @@ def run_churn_api():
     """Start the Churn Prediction API service."""
     print("🔮 Starting Churn Prediction API (FastAPI)...")
     try:
-        subprocess.run([sys.executable, "-m", "uvicorn", "src.api.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"])
+        subprocess.run([sys.executable, "-m", "uvicorn", "src.api.main:app", "--host", "0.0.0.0", "--port", "8001", "--reload"])
     except KeyboardInterrupt:
         print("\n🛑 Service stopped.")
 
 def run_dashboard():
     """Launch the Streamlit dashboard."""
     print("📊 Starting Sales Dashboard (Streamlit)...")
-    dashboard_path = BASE_DIR / "Sales_Dashboard" / "streamlit_app.py"
+    dashboard_path = BASE_DIR / "src" / "dashboard" / "streamlit_app.py"
     try:
         subprocess.run(["streamlit", "run", str(dashboard_path)])
     except KeyboardInterrupt:
@@ -55,12 +55,23 @@ def run_pipeline():
     """Execute the full data pipeline."""
     print("⚙️ Running Entire Data Pipeline...")
     from src.main import run_pipeline as main_pipeline
-    main_pipeline()
+    
+    # Define default paths for the pipeline
+    input_csv = os.path.join(BASE_DIR, "data", "raw", "Telco_customer_churn.xlsx")
+    out_dir = os.path.join(BASE_DIR, "data", "parquet", "processed")
+    
+    main_pipeline(
+        input_csv=input_csv,
+        out_dir=out_dir,
+        validate=True,
+        track_lineage=True,
+        track_metrics=True
+    )
 
 def run_train():
-    """Train the churn prediction model."""
-    print("🧠 Training Churn Model...")
-    from src.models.train import train
+    """Train the churn prediction model (with MLflow tracking)."""
+    print("🧠 Training Churn Model with MLflow tracking...")
+    from src.models.train_mlflow import train
     train()
 
 def main():

@@ -183,14 +183,14 @@ class SLAValidator:
         max_nulls = sla.get("max_nulls_pct", {})
         if isinstance(max_nulls, dict):
             # Per-column thresholds
-            for col, threshold in max_nulls.items():
-                if col in metrics.null_pcts:
-                    null_pct = metrics.null_pcts[col]
-                    if null_pct > threshold:
-                        violations.append(
-                            f"❌ Column {col} null pct {null_pct:.1%} "
-                            f"exceeds SLA {threshold:.1%}"
-                        )
+            default_threshold = max_nulls.get("DEFAULT")
+            for col, null_pct in metrics.null_pcts.items():
+                threshold = max_nulls.get(col, default_threshold)
+                if threshold is not None and null_pct > threshold:
+                    violations.append(
+                        f"❌ Column {col} null pct {null_pct:.1%} "
+                        f"exceeds SLA {threshold:.1%}"
+                    )
         else:
             # Global threshold for all columns
             for col, null_pct in metrics.null_pcts.items():

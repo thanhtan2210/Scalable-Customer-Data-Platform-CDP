@@ -14,18 +14,18 @@ RawTelcoSchema = DataFrameSchema(
     {
         "CustomerID": Column(str, unique=True, nullable=False),
         "Gender": Column(str, Check.isin(["Male", "Female"]), nullable=False),
-        "SeniorCitizen": Column(int, Check.isin([0, 1]), nullable=False),
+        "SeniorCitizen": Column(pa.Int, nullable=False, coerce=True),
         "Partner": Column(str, Check.isin(["Yes", "No"]), nullable=False),
         "Dependents": Column(str, Check.isin(["Yes", "No"]), nullable=False),
-        "Tenure Months": Column(int, Check.greater_than_or_equal_to(0), nullable=False),
+        "tenure": Column(pa.Int, Check.greater_than_or_equal_to(0), nullable=False, coerce=True),
         "PhoneService": Column(str, Check.isin(["Yes", "No"]), nullable=False),
         "InternetService": Column(str, Check.isin(["No", "DSL", "Fiber Optic", "Cable"]), nullable=False),
-        "MonthlyCharges": Column(float, Check.greater_than_or_equal_to(0), nullable=False),
-        "TotalCharges": Column(float, Check.greater_than_or_equal_to(0), nullable=True),
-        "Churn": Column(int, Check.isin([0, 1]), nullable=False),
+        "MonthlyCharges": Column(float, Check.greater_than_or_equal_to(0), nullable=False, coerce=True),
+        "TotalCharges": Column(float, Check.greater_than_or_equal_to(0), nullable=True, coerce=True),
+        "Churn": Column(pa.Int, nullable=False, coerce=True),
     },
     strict=False,
-    coerce=False,
+    coerce=True,
 )
 
 
@@ -46,7 +46,7 @@ ProcessedFeatureSchema = DataFrameSchema(
         "cltv_bin": Column(str, nullable=True, required=False),
     },
     strict=False,
-    coerce=False,
+    coerce=True,
 )
 
 

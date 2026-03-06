@@ -5,7 +5,7 @@ from typing import Optional
 import pandas as pd
 
 from src.etl.cleaning import (
-    load_csv,
+    load_data,
     convert_types,
     drop_invalid_rows,
     map_booleans,
@@ -34,7 +34,7 @@ DEFAULT_SLAS = {
     },
     "processed_features": {
         "min_rows": 5500,  # After dedup, expect ~5500+
-        "max_nulls_pct": 0.05,  # Max 5% null for any column
+        "max_nulls_pct": {"Churn Reason": 0.80, "DEFAULT": 0.05},  # Max 5% null for any column except Churn Reason
         "max_duplicates": 0,  # No duplicates allowed
     },
 }
@@ -54,7 +54,7 @@ def run_pipeline(
     """Orchestrate the ETL pipeline with validation, lineage, and metrics.
 
     Steps:
-    1. Load CSV (optionally incremental)
+    1. Load data (CSV or Excel, optionally incremental)
     2. Validate raw schema
     3. Convert types and drop invalid rows
     4. Map booleans and create features
@@ -63,7 +63,7 @@ def run_pipeline(
     7. Track lineage and save parquet
 
     Args:
-        input_csv: Path to input CSV file
+        input_csv: Path to input data file
         out_dir: Output directory for Parquet files
         partition_col: Optional column to partition by
         dry_run: If True, don't persist data
@@ -91,7 +91,7 @@ def run_pipeline(
     try:
         # ===== STEP 1: Load (Raw) =====
         logger.info("Step 1: Loading raw data...")
-        df_raw = load_csv(input_csv)
+        df_raw = load_data(input_csv)
 
         if validate:
             logger.info("  → Validating raw schema...")
