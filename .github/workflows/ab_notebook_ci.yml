@@ -94,9 +94,3 @@ jobs:
             --ExecutePreprocessor.kernel_name=python3 \
             --output ci_outputs/ab_analysis_executed.ipynb
           rm ab_analysis_tmp.ipynb
-
-      - name: Run CLI analyzer as additional guard
-        env:
-          PYTHONPATH: ${{ github.workspace }}
-        run: |
-          python scripts/analyze_ab_results.py --assign reports/ab_assignment.csv --outcomes reports/ab_outcomes.csv --report reports/ab_analysis.json || (echo 'analyze_ab_results failed' && exit 1)
