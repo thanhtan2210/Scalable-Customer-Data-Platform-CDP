@@ -1,6 +1,8 @@
-Run python scripts/init_db.py
 Traceback (most recent call last):
-  File "/home/runner/work/Scalable-Customer-Data-Platform-CDP/Scalable-Customer-Data-Platform-CDP/scripts/init_db.py", line 3, in <module>
-    from src.services.exposure_store import init_db
-ModuleNotFoundError: No module named 'src'
+  File "/home/runner/work/Scalable-Customer-Data-Platform-CDP/Scalable-Customer-Data-Platform-CDP/scripts/ingest_from_db.py", line 34, in <module>
+    run()
+  File "/home/runner/work/Scalable-Customer-Data-Platform-CDP/Scalable-Customer-Data-Platform-CDP/scripts/ingest_from_db.py", line 22, in run
+    {'CustomerID': r['customer_id'], 'ab_group': r['ab_group'], 'event': r['event'], 'ts': r['ts']})
+  File "lib/sqlalchemy/cyextension/resultproxy.pyx", line 54, in sqlalchemy.cyextension.resultproxy.BaseRow.__getitem__
+TypeError: tuple indices must be integers or slices, not str
 Error: Process completed with exit code 1.

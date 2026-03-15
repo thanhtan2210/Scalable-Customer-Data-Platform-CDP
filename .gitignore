@@ -17,3 +17,5 @@ hadoop_libs/
 .vscode/
 .idea/
 node_modules
+text_cicd.txt
+test_cicd.txt

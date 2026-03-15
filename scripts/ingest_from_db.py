@@ -16,10 +16,16 @@ def run(db_url: str = None):
     q = text('SELECT customer_id, ab_group, event, ts FROM exposures ORDER BY ts')
     rows = []
     with eng.connect() as conn:
-        res = conn.execute(q)
+        res = conn.execute(q).mappings()
         for r in res:
             rows.append(
-                {'CustomerID': r['customer_id'], 'ab_group': r['ab_group'], 'event': r['event'], 'ts': r['ts']})
+                {
+                    "CustomerID": r["customer_id"],
+                    "ab_group": r["ab_group"],
+                    "event": r["event"],
+                    "ts": r["ts"],
+                }
+            )
 
     OUT.parent.mkdir(parents=True, exist_ok=True)
     with open(OUT, 'w', encoding='utf-8', newline='') as f:
