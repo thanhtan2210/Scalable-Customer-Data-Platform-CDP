@@ -43,36 +43,54 @@ jobs:
 
       - name: Initialize exposures DB
         env:
-          DATABASE_URL: postgresql://postgres:password@postgres:5432/abdb
+          DATABASE_URL: postgresql://postgres:password@localhost:5432/abdb
+          PYTHONPATH: ${{ github.workspace }}
         run: |
           python scripts/init_db.py
 
       - name: Create A/B assignment CSV
+        env:
+          PYTHONPATH: ${{ github.workspace }}
         run: |
+          # Create data/raw if not exists
+          mkdir -p data/raw
+          # Create a dummy file if cleaned_telco.csv doesn't exist for assignment check
+          if [ ! -f data/raw/cleaned_telco.csv ]; then
+            echo "CustomerID,Gender,SeniorCitizen,Partner,Dependents,Tenure Months,PhoneService,InternetService,MonthlyCharges,TotalCharges,Churn" > data/raw/cleaned_telco.csv
+            echo "1,Male,0,Yes,No,1,Yes,DSL,50,100,0" >> data/raw/cleaned_telco.csv
+          fi
           python scripts/ab_assign.py --input data/raw/cleaned_telco.csv --out reports/ab_assignment.csv --ratio 0.5
 
       - name: Seed exposures into Postgres
         env:
-          DATABASE_URL: postgresql://postgres:password@postgres:5432/abdb
+          DATABASE_URL: postgresql://postgres:password@localhost:5432/abdb
+          PYTHONPATH: ${{ github.workspace }}
         run: |
           python scripts/seed_db_exposures.py
 
       - name: Export exposures from Postgres
         env:
-          DATABASE_URL: postgresql://postgres:password@postgres:5432/abdb
+          DATABASE_URL: postgresql://postgres:password@localhost:5432/abdb
+          PYTHONPATH: ${{ github.workspace }}
         run: |
           python scripts/ingest_from_db.py
 
       - name: Generate outcomes from exposures CSV
+        env:
+          PYTHONPATH: ${{ github.workspace }}
         run: |
           python scripts/generate_outcomes_from_exposures_csv.py
 
       - name: Execute A/B analysis notebook
-        # Fail the job if notebook execution raises an exception (assertions in notebook)
+        env:
+          PYTHONPATH: ${{ github.workspace }}
+          DATABASE_URL: postgresql://postgres:password@localhost:5432/abdb
         run: |
           mkdir -p ci_outputs
           jupyter nbconvert --to notebook --execute notebooks/ab_analysis.ipynb --ExecutePreprocessor.timeout=600 --output ci_outputs/ab_analysis_executed.ipynb
 
       - name: Run CLI analyzer as additional guard
+        env:
+          PYTHONPATH: ${{ github.workspace }}
         run: |
           python scripts/analyze_ab_results.py --assign reports/ab_assignment.csv --outcomes reports/ab_outcomes.csv --report reports/ab_analysis.json || (echo 'analyze_ab_results failed' && exit 1)

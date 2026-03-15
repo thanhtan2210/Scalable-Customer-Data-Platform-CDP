@@ -1,0 +1,6 @@
+Run python scripts/init_db.py
+Traceback (most recent call last):
+  File "/home/runner/work/Scalable-Customer-Data-Platform-CDP/Scalable-Customer-Data-Platform-CDP/scripts/init_db.py", line 3, in <module>
+    from src.services.exposure_store import init_db
+ModuleNotFoundError: No module named 'src'
+Error: Process completed with exit code 1.

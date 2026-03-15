@@ -99,12 +99,17 @@ def load_data(path: Union[str, Path]) -> pd.DataFrame:
         # Schema expects: ['No', 'DSL', 'Fiber Optic', 'Cable']
         if "InternetService" in df.columns and df["InternetService"].dtype == object:
             def normalize_internet(val):
-                if not isinstance(val, str): return val
+                if not isinstance(val, str):
+                    return val
                 v = val.strip().lower()
-                if v == 'dsl': return 'DSL'
-                if v == 'fiber optic': return 'Fiber Optic'
-                if v == 'no': return 'No'
-                if v == 'cable': return 'Cable'
+                if v == "dsl":
+                    return "DSL"
+                if v == "fiber optic":
+                    return "Fiber Optic"
+                if v == "no":
+                    return "No"
+                if v == "cable":
+                    return "Cable"
                 return val.title()
             
             df["InternetService"] = df["InternetService"].apply(normalize_internet)

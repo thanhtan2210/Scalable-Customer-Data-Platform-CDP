@@ -11,8 +11,6 @@ def calc(p0: float, mde: float, alpha: float = 0.05, power: float = 0.8, ratio: 
     # p0: baseline proportion (control churn rate)
     # mde: minimum detectable effect in absolute terms (e.g., 0.006 = 0.6%)
     p1 = p0 - mde
-    effect_size = NormalIndPower().solve_power(effect_size=None, nobs1=None,
-                                               alpha=alpha, power=power, ratio=ratio, alternative='two-sided')
     # Instead use proportions_ztest effect size conversion from Cohen h
     from statsmodels.stats.proportion import proportion_effectsize
 
