@@ -4,7 +4,12 @@ import json
 import pandas as pd
 import pytest
 
-from src.etl.schema import validate_raw, validate_processed, get_schema_report, RawTelcoSchema
+from src.etl.schema import (
+    validate_raw,
+    validate_processed,
+    get_schema_report,
+    RawTelcoSchema,
+)
 from src.etl.lineage import DataLineageRegistry
 from src.etl.incremental import IncrementalProcessor
 from src.etl.observability import MetricsCollector, SLAValidator
@@ -126,6 +131,7 @@ class TestIncrementalProcessing:
     def test_watermark_get_set(self, tmp_path):
         """Should persist and retrieve watermarks."""
         from datetime import datetime
+
         processor = IncrementalProcessor(str(tmp_path / "watermarks"))
 
         ts = datetime(2025, 1, 28, 12, 0, 0)
@@ -140,8 +146,7 @@ class TestIncrementalProcessing:
         processor = IncrementalProcessor(str(tmp_path / "watermarks"))
 
         before = pd.DataFrame({"CustomerID": ["A", "B"], "value": [1, 2]})
-        after = pd.DataFrame(
-            {"CustomerID": ["A", "B", "C"], "value": [1, 99, 3]})
+        after = pd.DataFrame({"CustomerID": ["A", "B", "C"], "value": [1, 99, 3]})
 
         changed = processor.get_changed_records(before, after)
         assert "C" in changed["CustomerID"].values

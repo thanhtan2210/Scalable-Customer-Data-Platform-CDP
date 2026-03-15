@@ -53,8 +53,9 @@ def test_functions_are_idempotent(tmp_df):
     orig = tmp_df.copy()
     working = tmp_df.copy()
     # call functions
-    _ = convert_types(working, numeric_cols=[
-                      "Total Charges", "Monthly Charges", "Tenure Months"])
+    _ = convert_types(
+        working, numeric_cols=["Total Charges", "Monthly Charges", "Tenure Months"]
+    )
     # original not changed
     assert orig.equals(tmp_df)
     working = tmp_df.copy()
@@ -94,12 +95,14 @@ def test_save_parquet_writes_file_and_partitioning(tmp_path):
     assert read_df.shape == df.shape
 
     # Case 2 - with partitioning by date
-    dates = pd.DataFrame({"a": [1, 2, 3], "event_date": [
-                         "2020-01-01", "2020-01-02", "2020-01-01"]})
+    dates = pd.DataFrame(
+        {"a": [1, 2, 3], "event_date": ["2020-01-01", "2020-01-02", "2020-01-01"]}
+    )
     out_dir2 = tmp_path / "out2"
     save_parquet(dates, out_dir2, partition_col="event_date")
-    expected_files = sorted([f for f in os.listdir(
-        out_dir2) if f.startswith("event_date=")])
+    expected_files = sorted(
+        [f for f in os.listdir(out_dir2) if f.startswith("event_date=")]
+    )
     # Expect partition files for each date
     assert any("event_date=2020-01-01.parquet" == f for f in expected_files)
     assert any("event_date=2020-01-02.parquet" == f for f in expected_files)
@@ -110,10 +113,11 @@ def test_save_parquet_writes_file_and_partitioning(tmp_path):
 
 def test_create_features_monthly_bin_none_on_insufficient_uniques():
     from src.etl.cleaning import create_features
+
     df = pd.DataFrame(
-        {"Monthly Charges": [10.0, 10.0, 10.0], "Tenure Months": [1, 2, 3]})
+        {"Monthly Charges": [10.0, 10.0, 10.0], "Tenure Months": [1, 2, 3]}
+    )
     out = create_features(df)
     # monthly_bin should be present but None or filled with NaNs
     assert "monthly_bin" in out.columns
-    assert out["monthly_bin"].isna().all(
-    ) or out["monthly_bin"].dtype == object
+    assert out["monthly_bin"].isna().all() or out["monthly_bin"].dtype == object

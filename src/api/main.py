@@ -12,8 +12,7 @@ Values are provided via environment variables; sensible local defaults
 are used when variables are not set.
 """
 # 1. MLflow & MinIO connection (read from ENV with fallback)
-_mlflow_s3_endpoint = os.getenv(
-    "MLFLOW_S3_ENDPOINT_URL", "http://localhost:9000")
+_mlflow_s3_endpoint = os.getenv("MLFLOW_S3_ENDPOINT_URL", "http://localhost:9000")
 _aws_access_key_id = os.getenv("AWS_ACCESS_KEY_ID", "admin")
 _aws_secret_access_key = os.getenv("AWS_SECRET_ACCESS_KEY", "password")
 MLFLOW_TRACKING_URI = os.getenv("MLFLOW_TRACKING_URI", "http://localhost:5000")
@@ -65,6 +64,7 @@ async def lifespan(app: FastAPI):
     # Clean up
     ml_models.clear()
 
+
 app = FastAPI(lifespan=lifespan, title="CDP Churn Prediction API")
 
 
@@ -90,8 +90,11 @@ def predict_churn(customer: CustomerRequest):
         return {
             "prediction": int(prediction),
             "churn_probability": float(probability),
-            "risk_level": "High" if probability > 0.7 else ("Medium" if probability > 0.4 else "Low")
+            "risk_level": (
+                "High"
+                if probability > 0.7
+                else ("Medium" if probability > 0.4 else "Low")
+            ),
         }
     except Exception as e:
-        raise HTTPException(
-            status_code=500, detail=f"Prediction error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Prediction error: {str(e)}")

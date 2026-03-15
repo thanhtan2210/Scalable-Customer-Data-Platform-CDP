@@ -6,13 +6,12 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import accuracy_score
 
 # Paths setup
-BASE_DIR = os.path.dirname(os.path.dirname(
-    os.path.dirname(os.path.abspath(__file__))))
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # MinIO paths
 # IMPORTANT: Pandas uses s3:// (not s3a://)
 INPUT_PATH = "s3://datalake/processed/features"
-MODEL_DIR = os.path.join(BASE_DIR, 'models')
+MODEL_DIR = os.path.join(BASE_DIR, "models")
 
 
 def train():
@@ -28,8 +27,8 @@ def train():
             storage_options={
                 "key": "admin",
                 "secret": "password",
-                "client_kwargs": {"endpoint_url": "http://localhost:9000"}
-            }
+                "client_kwargs": {"endpoint_url": "http://localhost:9000"},
+            },
         )
         print(f"✅ Loaded {len(df)} rows.")
     except Exception as e:
@@ -39,19 +38,19 @@ def train():
         return
 
     # 2. Prepare X, y
-    if 'Churn' not in df.columns:
-        print(
-            f"ERROR: Column 'Churn' not found. Available columns: {list(df.columns)}")
+    if "Churn" not in df.columns:
+        print(f"ERROR: Column 'Churn' not found. Available columns: {list(df.columns)}")
         return
 
-    X = df.drop(columns=['customerID', 'Churn'])
-    y = df['Churn']
+    X = df.drop(columns=["customerID", "Churn"])
+    y = df["Churn"]
 
     print(f"Features used for training: {list(X.columns)}")
 
     # 3. Split
     X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=0.2, random_state=42)
+        X, y, test_size=0.2, random_state=42
+    )
 
     # 4. Train
     print("Training Random Forest...")
@@ -65,7 +64,7 @@ def train():
 
     # 6. Save model locally (can upgrade to MLflow later)
     os.makedirs(MODEL_DIR, exist_ok=True)
-    save_path = os.path.join(MODEL_DIR, 'churn_model.joblib')
+    save_path = os.path.join(MODEL_DIR, "churn_model.joblib")
     joblib.dump(model, save_path)
     print(f"💾 Model saved locally to: {save_path}")
 

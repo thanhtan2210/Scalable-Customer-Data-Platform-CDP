@@ -2,6 +2,7 @@
 
 Tracks transformations, schema changes, and enables column-level lineage tracing.
 """
+
 import json
 import logging
 from datetime import datetime
@@ -143,13 +144,15 @@ class DataLineageRegistry:
                     target = entry["target"]
                     if depth == 0:
                         downstream["direct"].append(
-                            {"table": target,
-                                "transformation": entry["transformation"]}
+                            {"table": target, "transformation": entry["transformation"]}
                         )
                     else:
                         downstream["indirect"].append(
-                            {"table": target, "depth": depth,
-                                "transformation": entry["transformation"]}
+                            {
+                                "table": target,
+                                "depth": depth,
+                                "transformation": entry["transformation"],
+                            }
                         )
                     _traverse(target, depth + 1)
 
@@ -168,15 +171,15 @@ class DataLineageRegistry:
         total_rows_lost = sum(
             max(0, e["rows_before"] - e["rows_after"]) for e in self.lineage
         )
-        avg_loss_pct = sum(e["row_loss_pct"] for e in self.lineage) / len(
-            self.lineage
-        )
+        avg_loss_pct = sum(e["row_loss_pct"] for e in self.lineage) / len(self.lineage)
 
         return {
             "total_transformations": len(self.lineage),
-            "unique_tables": len(set(e["source"] for e in self.lineage).union(
-                set(e["target"] for e in self.lineage)
-            )),
+            "unique_tables": len(
+                set(e["source"] for e in self.lineage).union(
+                    set(e["target"] for e in self.lineage)
+                )
+            ),
             "total_rows_lost": total_rows_lost,
             "avg_row_loss_pct": avg_loss_pct,
             "transformations_by_type": self._group_by_transformation_type(),
@@ -246,8 +249,7 @@ def log_dataframe_transformation(
         transformation_name: Description of transformation
         metadata: Optional additional metadata
     """
-    schema_before = {col: str(dtype)
-                     for col, dtype in df_before.dtypes.items()}
+    schema_before = {col: str(dtype) for col, dtype in df_before.dtypes.items()}
     schema_after = {col: str(dtype) for col, dtype in df_after.dtypes.items()}
 
     registry.log_transformation(

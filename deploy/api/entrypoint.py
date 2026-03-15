@@ -7,6 +7,7 @@ Responsibilities:
 - Run optional migration hooks (placeholder)
 - Exec Uvicorn to start the FastAPI app
 """
+
 import os
 import sys
 import subprocess
@@ -62,7 +63,7 @@ def load_docker_secrets(secrets_dir: Path = Path("/run/secrets")):
 def run_wait_for(urls):
     if not urls:
         return
-    wait_script = ROOT / 'scripts' / 'wait_for.py'
+    wait_script = ROOT / "scripts" / "wait_for.py"
     if not wait_script.exists():
         print(f"wait_for script not found at {wait_script}; skipping wait")
         return
@@ -100,8 +101,9 @@ def run_migrations():
             import mlflow
             import joblib
 
-            mlflow.set_tracking_uri(os.environ.get(
-                "MLFLOW_TRACKING_URI", "http://mlflow:5000"))
+            mlflow.set_tracking_uri(
+                os.environ.get("MLFLOW_TRACKING_URI", "http://mlflow:5000")
+            )
             model_uri = f"models:/{model_name}/{model_version}"
             print(f"Preloading model from MLflow: {model_uri}")
             # Try sklearn flavor first (if available)
@@ -133,8 +135,14 @@ def run_migrations():
 
 
 def exec_uvicorn(app_module: str = "src.api.main:app"):
-    cmd = ["uvicorn", app_module, "--host", "0.0.0.0",
-           "--port", os.environ.get("PORT", "8000")]
+    cmd = [
+        "uvicorn",
+        app_module,
+        "--host",
+        "0.0.0.0",
+        "--port",
+        os.environ.get("PORT", "8000"),
+    ]
     print("Starting server:", cmd)
     os.execvp(cmd[0], cmd)
 
@@ -144,18 +152,17 @@ def main():
     load_docker_secrets(Path("/run/secrets"))
 
     # 2. Load .env if present in image root (fallback)
-    env_path = ROOT / '.env'
+    env_path = ROOT / ".env"
     load_env_file(env_path)
 
     # 2. Wait for dependencies (override via ENV WAIT_URLS as space-separated)
-    wait_urls = os.environ.get('WAIT_URLS')
+    wait_urls = os.environ.get("WAIT_URLS")
     if wait_urls:
         urls = wait_urls.split()
     else:
         urls = [
-            os.environ.get('MLFLOW_HEALTH_URL', 'http://mlflow:5000/'),
-            os.environ.get('MINIO_HEALTH_URL',
-                           'http://minio:9000/minio/health/live'),
+            os.environ.get("MLFLOW_HEALTH_URL", "http://mlflow:5000/"),
+            os.environ.get("MINIO_HEALTH_URL", "http://minio:9000/minio/health/live"),
         ]
     run_wait_for(urls)
 
@@ -166,5 +173,5 @@ def main():
     exec_uvicorn()
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

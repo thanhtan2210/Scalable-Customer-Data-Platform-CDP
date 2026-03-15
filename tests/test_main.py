@@ -76,7 +76,11 @@ def test_run_pipeline_with_metrics(tmp_csv, tmp_path):
     # Use lower SLA thresholds for test data
     test_slas = {
         "raw_telco": {"min_rows": 1, "max_nulls_pct": 1.0, "max_duplicates": 100},
-        "processed_features": {"min_rows": 1, "max_nulls_pct": 1.0, "max_duplicates": 100},
+        "processed_features": {
+            "min_rows": 1,
+            "max_nulls_pct": 1.0,
+            "max_duplicates": 100,
+        },
     }
 
     _ = run_pipeline(

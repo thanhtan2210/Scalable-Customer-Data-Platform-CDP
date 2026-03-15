@@ -1,13 +1,13 @@
 """Initial schema setup - create audit and customer tables.
 
 Revision ID: 001
-Revises: 
+Revises:
 Create Date: 2026-01-28 12:00:00.000000
 
 """
+
 from alembic import op
 import sqlalchemy as sa
-
 
 # revision identifiers, used by Alembic.
 revision = "001"
@@ -31,8 +31,9 @@ def upgrade() -> None:
         sa.Column("created_at", sa.DateTime, server_default=sa.func.now()),
         sa.Column("user_id", sa.String(255), nullable=True),
     )
-    op.create_index("ix_audit_log_table_created",
-                    "audit_log", ["table_name", "created_at"])
+    op.create_index(
+        "ix_audit_log_table_created", "audit_log", ["table_name", "created_at"]
+    )
 
     # Create customer_metadata table for storing customer feature metadata
     op.create_table(
@@ -44,11 +45,16 @@ def upgrade() -> None:
         sa.Column("last_purchase_date", sa.DateTime, nullable=True),
         sa.Column("churn_probability", sa.Float, nullable=True),
         sa.Column("created_at", sa.DateTime, server_default=sa.func.now()),
-        sa.Column("updated_at", sa.DateTime,
-                  server_default=sa.func.now(), onupdate=sa.func.now()),
+        sa.Column(
+            "updated_at",
+            sa.DateTime,
+            server_default=sa.func.now(),
+            onupdate=sa.func.now(),
+        ),
     )
-    op.create_index("ix_customer_metadata_customer_id",
-                    "customer_metadata", ["customer_id"])
+    op.create_index(
+        "ix_customer_metadata_customer_id", "customer_metadata", ["customer_id"]
+    )
 
 
 def downgrade() -> None:

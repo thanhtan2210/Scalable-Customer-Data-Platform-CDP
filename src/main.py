@@ -34,7 +34,10 @@ DEFAULT_SLAS = {
     },
     "processed_features": {
         "min_rows": 5500,  # After dedup, expect ~5500+
-        "max_nulls_pct": {"Churn Reason": 0.80, "DEFAULT": 0.05},  # Max 5% null for any column except Churn Reason
+        "max_nulls_pct": {
+            "Churn Reason": 0.80,
+            "DEFAULT": 0.05,
+        },  # Max 5% null for any column except Churn Reason
         "max_duplicates": 0,  # No duplicates allowed
     },
 }
@@ -110,8 +113,7 @@ def run_pipeline(
             # - load existing processed data
             # - merge with new raw data
             # - update watermarks
-            logger.info(
-                "  ℹ️  Incremental mode enabled (watermarks will be updated)")
+            logger.info("  ℹ️  Incremental mode enabled (watermarks will be updated)")
 
         # ===== STEP 3: Transform =====
         logger.info("Step 3: Transforming data...")
@@ -187,6 +189,7 @@ def run_pipeline(
             # Update watermark if incremental
             if incremental_processor:
                 import datetime
+
                 incremental_processor.set_watermark(
                     "raw_telco", datetime.datetime.utcnow()
                 )
@@ -205,15 +208,16 @@ def run_pipeline(
         logger.info(f"   Input rows: {len(df_raw)}")
         logger.info(f"   Output rows: {len(df_features)}")
         logger.info(
-            f"   Row reduction: {(len(df_raw) - len(df_features)) / len(df_raw) * 100:.1f}%")
+            f"   Row reduction: {(len(df_raw) - len(df_features)) / len(df_raw) * 100:.1f}%"
+        )
 
         if track_lineage:
             logger.info("\n📊 Lineage Registry:")
             lineage_stats = lineage_registry.get_statistics()
             logger.info(
-                f"   Total transformations: {lineage_stats['total_transformations']}")
-            logger.info(
-                f"   Total rows lost: {lineage_stats['total_rows_lost']}")
+                f"   Total transformations: {lineage_stats['total_transformations']}"
+            )
+            logger.info(f"   Total rows lost: {lineage_stats['total_rows_lost']}")
 
         return df_features
 
@@ -221,5 +225,6 @@ def run_pipeline(
         logger.error(f"❌ Pipeline failed: {e}")
         if track_metrics:
             logger.error(
-                f"Latest metrics: {metrics_collector.read_metrics()[-1] if metrics_collector.read_metrics() else 'None'}")
+                f"Latest metrics: {metrics_collector.read_metrics()[-1] if metrics_collector.read_metrics() else 'None'}"
+            )
         raise

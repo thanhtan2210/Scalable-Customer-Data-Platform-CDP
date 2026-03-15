@@ -11,18 +11,18 @@ from sqlalchemy import (
 from sqlalchemy.exc import SQLAlchemyError
 from datetime import datetime
 
-DATABASE_URL = os.environ.get('DATABASE_URL')
+DATABASE_URL = os.environ.get("DATABASE_URL")
 engine = None
 metadata = MetaData()
 
 exposures = Table(
-    'exposures',
+    "exposures",
     metadata,
-    Column('id', Integer, primary_key=True, autoincrement=True),
-    Column('customer_id', String(128), nullable=False, index=True),
-    Column('ab_group', String(8), nullable=False),
-    Column('event', String(64), nullable=False),
-    Column('ts', Float, nullable=False),
+    Column("id", Integer, primary_key=True, autoincrement=True),
+    Column("customer_id", String(128), nullable=False, index=True),
+    Column("ab_group", String(8), nullable=False),
+    Column("event", String(64), nullable=False),
+    Column("ts", Float, nullable=False),
 )
 
 
@@ -49,8 +49,9 @@ def insert_exposure(customer_id: str, ab_group: str, event: str, ts: float = Non
     try:
         with engine.connect() as conn:
             conn.execute(
-                exposures.insert().values(customer_id=customer_id,
-                                          ab_group=ab_group, event=event, ts=ts)
+                exposures.insert().values(
+                    customer_id=customer_id, ab_group=ab_group, event=event, ts=ts
+                )
             )
             conn.commit()
         return True

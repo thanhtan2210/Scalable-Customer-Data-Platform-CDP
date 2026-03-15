@@ -2,6 +2,7 @@
 
 Ensures data is partitioned correctly and monitors for partition skew.
 """
+
 import logging
 from pathlib import Path
 from typing import Dict, List
@@ -56,9 +57,7 @@ def validate_partition_layout(
     return partition_structure
 
 
-def detect_partition_skew(
-    parquet_dir: str, skew_threshold: float = 2.0
-) -> Dict:
+def detect_partition_skew(parquet_dir: str, skew_threshold: float = 2.0) -> Dict:
     """Find partitions with significantly more/fewer rows than average.
 
     A partition is considered "skewed" if its size is 2x (or more)

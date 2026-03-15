@@ -3,6 +3,7 @@
 
 Usage: python scripts/wait_for.py http://minio:9000/minio/health/live http://mlflow:5000/
 """
+
 import sys
 import time
 from urllib.request import urlopen, Request

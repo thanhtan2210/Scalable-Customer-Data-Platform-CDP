@@ -4,10 +4,10 @@ This module defines Pandera schemas for strict validation of:
 - Raw data: ensure types, constraints, and enums before processing
 - Processed data: ensure feature engineering results are valid
 """
+
 import pandas as pd
 import pandera as pa
 from pandera import Column, DataFrameSchema, Check
-
 
 # Schema for raw input data
 RawTelcoSchema = DataFrameSchema(
@@ -17,11 +17,19 @@ RawTelcoSchema = DataFrameSchema(
         "SeniorCitizen": Column(pa.Int, nullable=False, coerce=True),
         "Partner": Column(str, Check.isin(["Yes", "No"]), nullable=False),
         "Dependents": Column(str, Check.isin(["Yes", "No"]), nullable=False),
-        "tenure": Column(pa.Int, Check.greater_than_or_equal_to(0), nullable=False, coerce=True),
+        "tenure": Column(
+            pa.Int, Check.greater_than_or_equal_to(0), nullable=False, coerce=True
+        ),
         "PhoneService": Column(str, Check.isin(["Yes", "No"]), nullable=False),
-        "InternetService": Column(str, Check.isin(["No", "DSL", "Fiber Optic", "Cable"]), nullable=False),
-        "MonthlyCharges": Column(float, Check.greater_than_or_equal_to(0), nullable=False, coerce=True),
-        "TotalCharges": Column(float, Check.greater_than_or_equal_to(0), nullable=True, coerce=True),
+        "InternetService": Column(
+            str, Check.isin(["No", "DSL", "Fiber Optic", "Cable"]), nullable=False
+        ),
+        "MonthlyCharges": Column(
+            float, Check.greater_than_or_equal_to(0), nullable=False, coerce=True
+        ),
+        "TotalCharges": Column(
+            float, Check.greater_than_or_equal_to(0), nullable=True, coerce=True
+        ),
         "Churn": Column(pa.Int, nullable=False, coerce=True),
     },
     strict=False,
@@ -38,7 +46,9 @@ ProcessedFeatureSchema = DataFrameSchema(
         "Partner": Column(int, Check.isin([0, 1]), nullable=False),
         "Dependents": Column(int, Check.isin([0, 1]), nullable=False),
         "tenure": Column(int, Check.greater_than_or_equal_to(0), nullable=False),
-        "MonthlyCharges": Column(float, Check.greater_than_or_equal_to(0), nullable=False),
+        "MonthlyCharges": Column(
+            float, Check.greater_than_or_equal_to(0), nullable=False
+        ),
         "TotalCharges": Column(float, Check.greater_than_or_equal_to(0), nullable=True),
         "Churn": Column(int, Check.isin([0, 1]), nullable=False),
         "tenure_bin": Column(str, nullable=True, required=False),
@@ -79,7 +89,7 @@ def get_schema_report(df: pd.DataFrame, schema: DataFrameSchema) -> dict:
         col_data = df[col_name]
         n_rows = len(df)
         null_count = int(col_data.isnull().sum())
-        
+
         stats = {
             "dtype": str(col_data.dtype),
             "null_count": null_count,

@@ -2,6 +2,7 @@
 
 Tracks watermarks (last successful load) and processes only new/changed data.
 """
+
 import logging
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -58,8 +59,7 @@ class IncrementalProcessor:
         watermark_file = self._get_watermark_file(table_name)
         try:
             watermark_file.write_text(timestamp.isoformat())
-            logger.info(
-                f"Updated watermark for {table_name}: {timestamp.isoformat()}")
+            logger.info(f"Updated watermark for {table_name}: {timestamp.isoformat()}")
         except Exception as e:
             logger.error(f"Failed to set watermark for {table_name}: {e}")
 
@@ -94,8 +94,7 @@ class IncrementalProcessor:
             logger.info(f"No watermark for {table_name}, doing full load")
             max_date = pd.Timestamp("2000-01-01")
         else:
-            logger.info(
-                f"Found watermark for {table_name}: {max_date.isoformat()}")
+            logger.info(f"Found watermark for {table_name}: {max_date.isoformat()}")
 
         # Load raw data
         try:
@@ -112,8 +111,7 @@ class IncrementalProcessor:
             raw_new = raw
         else:
             # Parse date column and filter to lookback window
-            raw[partition_col] = pd.to_datetime(
-                raw[partition_col], errors="coerce")
+            raw[partition_col] = pd.to_datetime(raw[partition_col], errors="coerce")
             cutoff = max_date - timedelta(days=lookback_days)
             raw_new = raw[raw[partition_col] >= cutoff].copy()
             logger.info(
@@ -138,8 +136,7 @@ class IncrementalProcessor:
             if "CustomerID" in merged.columns:
                 if partition_col in merged.columns:
                     merged = merged.sort_values(partition_col)
-                merged = merged.drop_duplicates(
-                    subset=["CustomerID"], keep="last")
+                merged = merged.drop_duplicates(subset=["CustomerID"], keep="last")
                 logger.info(f"Merged to {len(merged)} unique customers")
             else:
                 logger.warning("No CustomerID column; keeping all rows")
@@ -186,15 +183,11 @@ class IncrementalProcessor:
 
         # Mark deleted records (optional, if you want to track deletes)
         if deleted_keys:
-            logger.info(
-                f"Detected {len(deleted_keys)} deleted records (not in after)"
-            )
+            logger.info(f"Detected {len(deleted_keys)} deleted records (not in after)")
 
         return changed
 
-    def get_statistics(
-        self, before: pd.DataFrame, after: pd.DataFrame
-    ) -> dict:
+    def get_statistics(self, before: pd.DataFrame, after: pd.DataFrame) -> dict:
         """Compute statistics about the changes.
 
         Args:

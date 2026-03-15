@@ -18,11 +18,13 @@ except Exception:
     # Fallback defaults if config not importable
     class cfg:
         MLFLOW_S3_ENDPOINT_URL = os.getenv(
-            "MLFLOW_S3_ENDPOINT_URL", "http://localhost:9000")
+            "MLFLOW_S3_ENDPOINT_URL", "http://localhost:9000"
+        )
         AWS_ACCESS_KEY_ID = os.getenv("AWS_ACCESS_KEY_ID", "admin")
         AWS_SECRET_ACCESS_KEY = os.getenv("AWS_SECRET_ACCESS_KEY", "password")
         PROCESSED_FEATURES_PATH = os.getenv(
-            "PROCESSED_FEATURES_PATH", "s3://datalake/processed/features")
+            "PROCESSED_FEATURES_PATH", "s3://datalake/processed/features"
+        )
 
 
 @st.cache_data(show_spinner=False)
@@ -32,7 +34,9 @@ def load_data() -> pd.DataFrame:
     Cached for faster interactions.
     """
     # 1. Try Local First (since Docker might be down)
-    local_path = PROJECT_ROOT / "data" / "parquet" / "processed" / "cleaned_telco.parquet"
+    local_path = (
+        PROJECT_ROOT / "data" / "parquet" / "processed" / "cleaned_telco.parquet"
+    )
     if local_path.exists():
         try:
             return pd.read_parquet(local_path)
@@ -45,14 +49,12 @@ def load_data() -> pd.DataFrame:
         "secret": cfg.AWS_SECRET_ACCESS_KEY,
         "client_kwargs": {"endpoint_url": cfg.MLFLOW_S3_ENDPOINT_URL},
     }
-    path = getattr(cfg, "PROCESSED_FEATURES_PATH",
-                   "s3://datalake/processed/features")
+    path = getattr(cfg, "PROCESSED_FEATURES_PATH", "s3://datalake/processed/features")
     try:
         df = pd.read_parquet(path, storage_options=s3_opts)
         return df
     except Exception as e:
-        st.warning(
-            f"Cannot read from MinIO ({path}): {e}. Local fallback failed too.")
+        st.warning(f"Cannot read from MinIO ({path}): {e}. Local fallback failed too.")
         return pd.DataFrame()
 
 
@@ -64,8 +66,9 @@ def normalize_churn_column(df: pd.DataFrame) -> pd.DataFrame:
         if out["Churn"].dtype == object:
             out["Churn"] = out["Churn"].map({"Yes": 1, "No": 0})
         # Coerce to numeric
-        out["Churn"] = pd.to_numeric(
-            out["Churn"], errors="coerce").fillna(0).astype(int)
+        out["Churn"] = (
+            pd.to_numeric(out["Churn"], errors="coerce").fillna(0).astype(int)
+        )
     return out
 
 
@@ -79,7 +82,7 @@ COL_MAP = {
     "SeniorCitizen": "Người cao tuổi (65+)",
     "InternetService": "Dịch vụ Internet",
     "tenure": "Số tháng sử dụng",
-    "Churn": "Rời bỏ dịch vụ"
+    "Churn": "Rời bỏ dịch vụ",
 }
 
 with st.sidebar:
@@ -112,16 +115,24 @@ with st.expander("📖 Chú thích ý nghĩa các cột dữ liệu"):
     - **CLTV (Customer Lifetime Value):** Giá trị vòng đời khách hàng (dự đoán lợi nhuận).
     """)
 
+
 # Dynamic options for filters
 def opts(col):
-    return sorted([x for x in _df[col].dropna().unique().tolist()]) if col in _df.columns else []
+    return (
+        sorted([x for x in _df[col].dropna().unique().tolist()])
+        if col in _df.columns
+        else []
+    )
+
 
 if "tenure_bin" in _df.columns:
     tenure_bin_sel = st.sidebar.multiselect(
-        "Nhóm số tháng sử dụng (Tenure)", options=opts("tenure_bin"), key="tenure_sel")
+        "Nhóm số tháng sử dụng (Tenure)", options=opts("tenure_bin"), key="tenure_sel"
+    )
 if "monthly_bin" in _df.columns:
     monthly_bin_sel = st.sidebar.multiselect(
-        "Nhóm phí hàng tháng", options=opts("monthly_bin"), key="monthly_sel")
+        "Nhóm phí hàng tháng", options=opts("monthly_bin"), key="monthly_sel"
+    )
 
 # Apply filters
 f = _df.copy()
@@ -141,8 +152,11 @@ total = len(f)
 churn_rate = f["Churn"].mean() if "Churn" in f.columns else float("nan")
 col1, col2 = st.columns(2)
 col1.metric("Tổng số khách hàng", f"{total}")
-col2.metric("Tỷ lệ rời bỏ (Churn Rate)", f"{churn_rate:.2%}" if pd.notna(
-    churn_rate) else "N/A", help="Tỷ lệ trung bình khách hàng rời bỏ trong nhóm này.")
+col2.metric(
+    "Tỷ lệ rời bỏ (Churn Rate)",
+    f"{churn_rate:.2%}" if pd.notna(churn_rate) else "N/A",
+    help="Tỷ lệ trung bình khách hàng rời bỏ trong nhóm này.",
+)
 
 st.markdown("---")
 
@@ -151,7 +165,9 @@ c1, c2 = st.columns(2)
 
 with c1:
     st.subheader("📈 Tỷ lệ Churn theo thời gian gắn bó")
-    st.info("Biểu đồ này cho biết nhóm khách hàng nào (mới dùng hay dùng lâu) có nguy cơ rời bỏ cao nhất.")
+    st.info(
+        "Biểu đồ này cho biết nhóm khách hàng nào (mới dùng hay dùng lâu) có nguy cơ rời bỏ cao nhất."
+    )
     if "tenure_bin" in f.columns and "Churn" in f.columns:
         tb = f.groupby("tenure_bin")["Churn"].mean().reset_index()
         tb = tb.sort_values("tenure_bin")
@@ -161,7 +177,9 @@ with c1:
 
 with c2:
     st.subheader("💰 Tỷ lệ Churn theo mức phí hàng tháng")
-    st.info("Mức phí cao hay thấp ảnh hưởng thế nào đến quyết định rời bỏ của khách hàng?")
+    st.info(
+        "Mức phí cao hay thấp ảnh hưởng thế nào đến quyết định rời bỏ của khách hàng?"
+    )
     if "monthly_bin" in f.columns and "Churn" in f.columns:
         mb = f.groupby("monthly_bin")["Churn"].mean().reset_index()
         st.bar_chart(mb.set_index("monthly_bin"))
@@ -224,22 +242,35 @@ try:
     from mlflow.tracking import MlflowClient
 
     mlflow.set_tracking_uri(
-        getattr(cfg, "MLFLOW_TRACKING_URI", "http://localhost:5000"))
+        getattr(cfg, "MLFLOW_TRACKING_URI", "http://localhost:5000")
+    )
     client = MlflowClient()
-    exp = next((e for e in client.search_experiments(
-        filter_string="name = 'CDP_Churn_Prediction'")), None)
+    exp = next(
+        (
+            e
+            for e in client.search_experiments(
+                filter_string="name = 'CDP_Churn_Prediction'"
+            )
+        ),
+        None,
+    )
     if exp:
-        runs = client.search_runs([exp.experiment_id], order_by=[
-                                  "attributes.start_time DESC"], max_results=1)
+        runs = client.search_runs(
+            [exp.experiment_id], order_by=["attributes.start_time DESC"], max_results=1
+        )
         if runs:
             r = runs[0]
             acc = r.data.metrics.get("accuracy")
             st.success("Mô hình mới nhất đang hoạt động!")
-            st.json({
-                "Run ID": r.info.run_id,
-                "Độ chính xác (Accuracy)": acc,
-                "Thời gian huấn luyện": pd.to_datetime(r.info.start_time, unit='ms').strftime('%Y-%m-%d %H:%M')
-            })
+            st.json(
+                {
+                    "Run ID": r.info.run_id,
+                    "Độ chính xác (Accuracy)": acc,
+                    "Thời gian huấn luyện": pd.to_datetime(
+                        r.info.start_time, unit="ms"
+                    ).strftime("%Y-%m-%d %H:%M"),
+                }
+            )
         else:
             st.caption("Chưa có lượt huấn luyện nào được ghi nhận.")
     else:

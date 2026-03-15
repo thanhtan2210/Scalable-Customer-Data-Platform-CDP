@@ -2,6 +2,7 @@
 
 Tracks metrics for each pipeline run and validates against SLAs.
 """
+
 import json
 import logging
 from dataclasses import dataclass, asdict
@@ -56,8 +57,9 @@ class MetricsCollector:
             DataQualityMetrics object
         """
         null_counts = {col: int(df[col].isnull().sum()) for col in df.columns}
-        null_pcts = {col: nc / len(df) if len(df) >
-                     0 else 0 for col, nc in null_counts.items()}
+        null_pcts = {
+            col: nc / len(df) if len(df) > 0 else 0 for col, nc in null_counts.items()
+        }
 
         metrics = DataQualityMetrics(
             timestamp=datetime.utcnow().isoformat(),
@@ -66,8 +68,11 @@ class MetricsCollector:
             column_count=len(df.columns),
             null_counts=null_counts,
             null_pcts=null_pcts,
-            duplicate_count=len(
-                df[df.duplicated(subset=["CustomerID"])]) if "CustomerID" in df.columns else 0,
+            duplicate_count=(
+                len(df[df.duplicated(subset=["CustomerID"])])
+                if "CustomerID" in df.columns
+                else 0
+            ),
             schema_columns=list(df.columns),
             processing_time_sec=elapsed_time,
             status="success",
@@ -83,8 +88,7 @@ class MetricsCollector:
                 f.write(json.dumps(asdict(metrics)) + "\n")
 
             # Log summary
-            max_null_pct = max(metrics.null_pcts.values()
-                               ) if metrics.null_pcts else 0
+            max_null_pct = max(metrics.null_pcts.values()) if metrics.null_pcts else 0
             logger.info(
                 f"{metrics.table_name}: {metrics.row_count} rows, "
                 f"max_null_pct={max_null_pct:.1%}, "
@@ -94,7 +98,9 @@ class MetricsCollector:
         except Exception as e:
             logger.error(f"Failed to log metrics: {e}")
 
-    def read_metrics(self, table_name: Optional[str] = None) -> List[DataQualityMetrics]:
+    def read_metrics(
+        self, table_name: Optional[str] = None
+    ) -> List[DataQualityMetrics]:
         """Read metrics from file.
 
         Args:
@@ -222,7 +228,6 @@ class SLAValidator:
         violations = self.validate(metrics)
         if violations:
             msg = "\n".join(violations)
-            raise ValueError(
-                f"SLA validation failed for {metrics.table_name}:\n{msg}")
+            raise ValueError(f"SLA validation failed for {metrics.table_name}:\n{msg}")
 
         logger.info(f"✅ {metrics.table_name} passed all SLAs")

@@ -15,6 +15,7 @@ MLRUNS_DIR = BASE_DIR / "mlruns"
 mlflow.set_tracking_uri(f"file:///{MLRUNS_DIR}")
 mlflow.set_experiment("CDP_Churn_Prediction")
 
+
 def train():
     print("--- Starting Training with MLflow Tracking (Local Filesystem) ---")
 
@@ -22,7 +23,7 @@ def train():
     if not LOCAL_INPUT.exists():
         print(f"❌ Error: Local data not found at {LOCAL_INPUT}")
         return
-        
+
     try:
         print(f"🚀 Reading local data from: {LOCAL_INPUT}")
         df = pd.read_parquet(LOCAL_INPUT)
@@ -31,21 +32,36 @@ def train():
         return
 
     # 2. Prepare Data
-    target = 'Churn'
+    target = "Churn"
     if target not in df.columns:
         print(f"❌ Error: Column '{target}' not found.")
         return
 
     # Drop non-numeric or ID columns
-    drop_cols = ['CustomerID', 'customerID', 'tenure_bin', 'monthly_bin', 'cltv_bin', 'Churn Label', 'Churn Reason', 'Count', 'Country', 'State', 'City', 'Zip Code', 'Lat Long']
+    drop_cols = [
+        "CustomerID",
+        "customerID",
+        "tenure_bin",
+        "monthly_bin",
+        "cltv_bin",
+        "Churn Label",
+        "Churn Reason",
+        "Count",
+        "Country",
+        "State",
+        "City",
+        "Zip Code",
+        "Lat Long",
+    ]
     X = df.drop(columns=[c for c in drop_cols if c in df.columns] + [target])
-    
+
     # Simple encoding
     X = pd.get_dummies(X)
     y = df[target]
-    
+
     X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=0.2, random_state=42, stratify=y)
+        X, y, test_size=0.2, random_state=42, stratify=y
+    )
 
     # 3. START MLFLOW RUN
     with mlflow.start_run():
@@ -61,7 +77,8 @@ def train():
         # B. Train
         print(f"Training Random Forest on {len(X_train)} samples...")
         model = RandomForestClassifier(
-            n_estimators=n_estimators, max_depth=max_depth, random_state=42)
+            n_estimators=n_estimators, max_depth=max_depth, random_state=42
+        )
         model.fit(X_train, y_train)
 
         # C. Evaluate
@@ -72,10 +89,7 @@ def train():
 
         # D. Log Model
         print(f"💾 Saving model to MLflow (Local Dir: {MLRUNS_DIR})...")
-        mlflow.sklearn.log_model(
-            sk_model=model,
-            artifact_path="random_forest_model"
-        )
+        mlflow.sklearn.log_model(sk_model=model, artifact_path="random_forest_model")
 
         print("✨ Done! Information logged to local mlruns folder")
 

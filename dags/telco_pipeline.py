@@ -11,8 +11,10 @@ Requires Airflow with project dependencies available.
 Install: pip install apache-airflow==2.7.3
 Or use constraints: https://airflow.apache.org/docs/apache-airflow/stable/installation/installing-from-pypi.html
 """
+
 from src.main import run_pipeline
 from src.models.train_mlflow import train as train_mlflow_model
+
 # Updated imports for new job structure
 from src.jobs.ingest_to_minio_job import upload_to_minio as ingest_to_minio_upload
 from src.jobs.ingest_job import convert as csv_to_parquet_convert
@@ -47,9 +49,7 @@ def run_data_quality_check(**context):
     result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
 
     if result.returncode != 0:
-        raise AirflowException(
-            f"Data quality check failed:\n{result.stderr}"
-        )
+        raise AirflowException(f"Data quality check failed:\n{result.stderr}")
 
     return result.stdout
 
@@ -58,8 +58,7 @@ def run_etl_with_validation(**context):
     """Run ETL pipeline with schema validation and SLA checks."""
     try:
         df = run_pipeline(
-            input_csv=str(PROJECT_ROOT / "data" / "raw" /
-                          "Telco_customer_churn.xlsx"),
+            input_csv=str(PROJECT_ROOT / "data" / "raw" / "Telco_customer_churn.xlsx"),
             out_dir=str(PROJECT_ROOT / "data" / "parquet" / "processed"),
             partition_col="load_date",
             validate=True,  # Enable schema validation
@@ -67,9 +66,7 @@ def run_etl_with_validation(**context):
             track_metrics=True,  # Collect metrics and validate SLAs
         )
 
-        context["task_instance"].xcom_push(
-            key="processed_rows", value=len(df)
-        )
+        context["task_instance"].xcom_push(key="processed_rows", value=len(df))
         return f"ETL completed: {len(df)} rows processed"
     except Exception as e:
         raise AirflowException(f"ETL pipeline failed: {e}") from e
@@ -131,4 +128,11 @@ with DAG(
     )
 
     # Define task dependencies
-    csv_to_parquet >> ingest_to_minio >> data_quality >> spark_transform >> etl_with_validation >> train_mlflow
+    (
+        csv_to_parquet
+        >> ingest_to_minio
+        >> data_quality
+        >> spark_transform
+        >> etl_with_validation
+        >> train_mlflow
+    )
