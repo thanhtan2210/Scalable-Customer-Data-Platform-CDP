@@ -48,6 +48,14 @@ try {
     Write-Host "   - Running A/B Assignment..."
     python scripts/ab_assign.py --input data/raw/cleaned_telco.csv --out reports/ab_assignment.csv --ratio 0.5
     
+    # Create dummy exposures if missing (simulating DB export)
+    $exposures_csv = "reports/ab_exposures_from_db.csv"
+    if (!(Test-Path $exposures_csv)) {
+        "CustomerID,ab_group,event,ts" | Out-File -FilePath $exposures_csv -Encoding utf8
+        "1,treatment,exposure,2025-01-28 12:00:00" | Out-File -Append -FilePath $exposures_csv -Encoding utf8
+        Write-Host "   + Created dummy exposures for local simulation."
+    }
+
     Write-Host "   - Generating outcomes..."
     python scripts/generate_outcomes_from_exposures_csv.py
     
