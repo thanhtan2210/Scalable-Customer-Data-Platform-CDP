@@ -1,10 +1,10 @@
 # check_ci.ps1 - Comprehensive Local CI/CD Runner for Windows
 # Usage: .\check_ci.ps1
 
-Write-Host "🚀 Starting COMPREHENSIVE Local CI/CD Checks..." -ForegroundColor Cyan
+Write-Host " Starting COMPREHENSIVE Local CI/CD Checks..." -ForegroundColor Cyan
 
 # --- STEP 1: PREPARATION ---
-Write-Host "`n📁 Step 1: Preparing directories and mock data..." -ForegroundColor Yellow
+Write-Host "`n Step 1: Preparing directories and mock data..." -ForegroundColor Yellow
 $dirs = "data/raw", "data/parquet", "data/processed", "reports", "ci_outputs"
 foreach ($dir in $dirs) {
     if (!(Test-Path $dir)) {
@@ -20,9 +20,9 @@ if (!(Test-Path $dummy_csv)) {
 }
 
 # --- STEP 2: DEPENDENCIES ---
-Write-Host "`n📦 Step 2: Verifying dependencies..." -ForegroundColor Yellow
+Write-Host "`n Step 2: Verifying dependencies..." -ForegroundColor Yellow
 python -m pip install --quiet ruff black pytest pytest-cov sqlalchemy psycopg2-binary nbconvert jupyter pandas
-Write-Host "   ✅ Dependencies verified."
+Write-Host "   Dependencies verified."
 
 # --- STEP 3: CDP PIPELINE (LINT/FORMAT/TEST) ---
 Write-Host "`n🔍 Step 3: Running CDP Pipeline Checks (Lint/Format/Unit Tests)..." -ForegroundColor Yellow
@@ -43,7 +43,7 @@ pytest tests/ -v --maxfail=3
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 # --- STEP 4: A/B NOTEBOOK WORKFLOW ---
-Write-Host "`n🧪 Step 4: Simulating A/B Notebook CI..." -ForegroundColor Yellow
+Write-Host "`n Step 4: Simulating A/B Notebook CI..." -ForegroundColor Yellow
 try {
     Write-Host "   - Running A/B Assignment..."
     python scripts/ab_assign.py --input data/raw/cleaned_telco.csv --out reports/ab_assignment.csv --ratio 0.5
@@ -53,26 +53,29 @@ try {
     
     Write-Host "   - Testing Notebook Execution (nbconvert)..."
     jupyter nbconvert --to notebook --execute notebooks/ab_analysis.ipynb --ExecutePreprocessor.timeout=60 --output ci_outputs/test_out.ipynb
-    Write-Host "   ✅ A/B Workflow simulation passed." -ForegroundColor Green
-} catch {
-    Write-Host "   ❌ A/B Workflow failed!" -ForegroundColor Red
+    Write-Host "    A/B Workflow simulation passed." -ForegroundColor Green
+}
+catch {
+    Write-Host "    A/B Workflow failed!" -ForegroundColor Red
     exit 1
 }
 
 # --- STEP 5: DOCKER IMAGE BUILD (Optional) ---
-Write-Host "`n🐳 Step 5: Checking Docker API Image Build (Dry-run)..." -ForegroundColor Yellow
+Write-Host "`n Step 5: Checking Docker API Image Build (Dry-run)..." -ForegroundColor Yellow
 $docker_check = Get-Command docker -ErrorAction SilentlyContinue
 if ($docker_check) {
     Write-Host "   - Building API Image locally..."
     docker build -f deploy/api/Dockerfile . -t api-test-local --quiet
     if ($LASTEXITCODE -eq 0) {
-        Write-Host "   ✅ Docker build successful." -ForegroundColor Green
-    } else {
-        Write-Host "   ❌ Docker build failed!" -ForegroundColor Red
+        Write-Host "    Docker build successful." -ForegroundColor Green
+    }
+    else {
+        Write-Host "    Docker build failed!" -ForegroundColor Red
         exit 1
     }
-} else {
-    Write-Host "   ⚠️  Docker not found. Skipping image build check." -ForegroundColor Gray
+}
+else {
+    Write-Host "     Docker not found. Skipping image build check." -ForegroundColor Gray
 }
 
-Write-Host "`n✨✨ ALL SYSTEM CHECKS PASSED! YOU ARE READY TO PUSH. ✨✨" -ForegroundColor Green
+Write-Host "`n ALL SYSTEM CHECKS PASSED! YOU ARE READY TO PUSH. ✨✨" -ForegroundColor Green
