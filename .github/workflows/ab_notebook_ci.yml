@@ -87,11 +87,13 @@ jobs:
           DATABASE_URL: postgresql://postgres:password@localhost:5432/abdb
         run: |
           mkdir -p ci_outputs
-          jupyter nbconvert --to notebook --execute notebooks/ab_analysis.ipynb \
+          # Copy notebook to root to ensure relative paths like 'reports/...' work
+          cp notebooks/ab_analysis.ipynb ./ab_analysis_tmp.ipynb
+          jupyter nbconvert --to notebook --execute ab_analysis_tmp.ipynb \
             --ExecutePreprocessor.timeout=600 \
             --ExecutePreprocessor.kernel_name=python3 \
-            --ExecutePreprocessor.base_path=. \
             --output ci_outputs/ab_analysis_executed.ipynb
+          rm ab_analysis_tmp.ipynb
 
       - name: Run CLI analyzer as additional guard
         env:
