@@ -78,4 +78,5 @@ else {
     Write-Host "     Docker not found. Skipping image build check." -ForegroundColor Gray
 }
 
-Write-Host "`n ALL SYSTEM CHECKS PASSED! YOU ARE READY TO PUSH. ✨✨" -ForegroundColor Green
+Write-Host "`n[DONE] ALL SYSTEM CHECKS PASSED! YOU ARE READY TO PUSH." -ForegroundColor Green
+
