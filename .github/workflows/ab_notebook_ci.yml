@@ -52,8 +52,8 @@ jobs:
         env:
           PYTHONPATH: ${{ github.workspace }}
         run: |
-          # Create data/raw if not exists
-          mkdir -p data/raw
+          # Create required directories
+          mkdir -p data/raw reports
           # Create a dummy file if cleaned_telco.csv doesn't exist for assignment check
           if [ ! -f data/raw/cleaned_telco.csv ]; then
             echo "CustomerID,Gender,SeniorCitizen,Partner,Dependents,Tenure Months,PhoneService,InternetService,MonthlyCharges,TotalCharges,Churn" > data/raw/cleaned_telco.csv

@@ -1,8 +1,307 @@
+7s
+Run mkdir -p ci_outputs
+[NbConvertApp] Converting notebook notebooks/ab_analysis.ipynb to notebook
 Traceback (most recent call last):
-  File "/home/runner/work/Scalable-Customer-Data-Platform-CDP/Scalable-Customer-Data-Platform-CDP/scripts/ingest_from_db.py", line 34, in <module>
-    run()
-  File "/home/runner/work/Scalable-Customer-Data-Platform-CDP/Scalable-Customer-Data-Platform-CDP/scripts/ingest_from_db.py", line 22, in run
-    {'CustomerID': r['customer_id'], 'ab_group': r['ab_group'], 'event': r['event'], 'ts': r['ts']})
-  File "lib/sqlalchemy/cyextension/resultproxy.pyx", line 54, in sqlalchemy.cyextension.resultproxy.BaseRow.__getitem__
-TypeError: tuple indices must be integers or slices, not str
+  File "/opt/hostedtoolcache/Python/3.10.20/x64/bin/jupyter-nbconvert", line 6, in <module>
+    sys.exit(main())
+  File "/opt/hostedtoolcache/Python/3.10.20/x64/lib/python3.10/site-packages/jupyter_core/application.py", line 284, in launch_instance
+    super().launch_instance(argv=argv, **kwargs)
+  File "/opt/hostedtoolcache/Python/3.10.20/x64/lib/python3.10/site-packages/traitlets/config/application.py", line 1075, in launch_instance
+    app.start()
+  File "/opt/hostedtoolcache/Python/3.10.20/x64/lib/python3.10/site-packages/nbconvert/nbconvertapp.py", line 420, in start
+    self.convert_notebooks()
+  File "/opt/hostedtoolcache/Python/3.10.20/x64/lib/python3.10/site-packages/nbconvert/nbconvertapp.py", line 597, in convert_notebooks
+    self.convert_single_notebook(notebook_filename)
+  File "/opt/hostedtoolcache/Python/3.10.20/x64/lib/python3.10/site-packages/nbconvert/nbconvertapp.py", line 563, in convert_single_notebook
+    output, resources = self.export_single_notebook(
+  File "/opt/hostedtoolcache/Python/3.10.20/x64/lib/python3.10/site-packages/nbconvert/nbconvertapp.py", line 487, in export_single_notebook
+    output, resources = self.exporter.from_filename(
+  File "/opt/hostedtoolcache/Python/3.10.20/x64/lib/python3.10/site-packages/nbconvert/exporters/exporter.py", line 201, in from_filename
+    return self.from_file(f, resources=resources, **kw)
+  File "/opt/hostedtoolcache/Python/3.10.20/x64/lib/python3.10/site-packages/nbconvert/exporters/exporter.py", line 220, in from_file
+    return self.from_notebook_node(
+  File "/opt/hostedtoolcache/Python/3.10.20/x64/lib/python3.10/site-packages/nbconvert/exporters/notebook.py", line 36, in from_notebook_node
+    nb_copy, resources = super().from_notebook_node(nb, resources, **kw)
+  File "/opt/hostedtoolcache/Python/3.10.20/x64/lib/python3.10/site-packages/nbconvert/exporters/exporter.py", line 154, in from_notebook_node
+    nb_copy, resources = self._preprocess(nb_copy, resources)
+  File "/opt/hostedtoolcache/Python/3.10.20/x64/lib/python3.10/site-packages/nbconvert/exporters/exporter.py", line 353, in _preprocess
+    nbc, resc = preprocessor(nbc, resc)
+  File "/opt/hostedtoolcache/Python/3.10.20/x64/lib/python3.10/site-packages/nbconvert/preprocessors/base.py", line 48, in __call__
+    return self.preprocess(nb, resources)
+  File "/opt/hostedtoolcache/Python/3.10.20/x64/lib/python3.10/site-packages/nbconvert/preprocessors/execute.py", line 103, in preprocess
+    self.preprocess_cell(cell, resources, index)
+  File "/opt/hostedtoolcache/Python/3.10.20/x64/lib/python3.10/site-packages/nbconvert/preprocessors/execute.py", line 124, in preprocess_cell
+    cell = self.execute_cell(cell, index, store_history=True)
+  File "/opt/hostedtoolcache/Python/3.10.20/x64/lib/python3.10/site-packages/jupyter_core/utils/__init__.py", line 165, in wrapped
+    return loop.run_until_complete(inner)
+  File "/opt/hostedtoolcache/Python/3.10.20/x64/lib/python3.10/asyncio/base_events.py", line 649, in run_until_complete
+    return future.result()
+  File "/opt/hostedtoolcache/Python/3.10.20/x64/lib/python3.10/site-packages/nbclient/client.py", line 1062, in async_execute_cell
+    await self._check_raise_for_error(cell, cell_index, exec_reply)
+  File "/opt/hostedtoolcache/Python/3.10.20/x64/lib/python3.10/site-packages/nbclient/client.py", line 918, in _check_raise_for_error
+    raise CellExecutionError.from_cell_and_msg(cell, exec_reply_content)
+nbclient.exceptions.CellExecutionError: An error occurred while executing the following cell:
+------------------
+# Load data (robust to different column names)
+assign_df = pd.read_csv(ASSIGN)
+out_df = (
+    pd.read_csv(OUTCOMES)
+    if OUTCOMES.exists()
+    else pd.DataFrame(columns=["CustomerID", "churn"])
+)
+
+# normalize column names
+if "customerID" in assign_df.columns and "CustomerID" not in assign_df.columns:
+    assign_df = assign_df.rename(columns={"customerID": "CustomerID"})
+if "customerID" in out_df.columns and "CustomerID" not in out_df.columns:
+    out_df = out_df.rename(columns={"customerID": "CustomerID"})
+
+df = assign_df.merge(out_df, on="CustomerID", how="left")
+df["churn"] = df["churn"].fillna(0).astype(int)
+df.head()
+------------------
+
+
+---------------------------------------------------------------------------
+FileNotFoundError                         Traceback (most recent call last)
+Cell In[3], line 2
+      1 # Load data (robust to different column names)
+----> 2 assign_df = pd.read_csv(ASSIGN)
+      3 out_df = (
+      4     pd.read_csv(OUTCOMES)
+      5     if OUTCOMES.exists()
+      6     else pd.DataFrame(columns=["CustomerID", "churn"])
+      7 )
+      9 # normalize column names
+
+File /opt/hostedtoolcache/Python/3.10.20/x64/lib/python3.10/site-packages/pandas/io/parsers/readers.py:1026, in read_csv(filepath_or_buffer, sep, delimiter, header, names, index_col, usecols, dtype, engine, converters, true_values, false_values, skipinitialspace, skiprows, skipfooter, nrows, na_values, keep_default_na, na_filter, verbose, skip_blank_lines, parse_dates, infer_datetime_format, keep_date_col, date_parser, date_format, dayfirst, cache_dates, iterator, chunksize, compression, thousands, decimal, lineterminator, quotechar, quoting, doublequote, escapechar, comment, encoding, encoding_errors, dialect, on_bad_lines, delim_whitespace, low_memory, memory_map, float_precision, storage_options, dtype_backend)
+   1013 kwds_defaults = _refine_defaults_read(
+   1014     dialect,
+   1015     delimiter,
+   (...)
+   1022     dtype_backend=dtype_backend,
+   1023 )
+   1024 kwds.update(kwds_defaults)
+-> 1026 return _read(filepath_or_buffer,kwds)
+
+File /opt/hostedtoolcache/Python/3.10.20/x64/lib/python3.10/site-packages/pandas/io/parsers/readers.py:620, in _read(filepath_or_buffer, kwds)
+    617 _validate_names(kwds.get("names", None))
+    619 # Create the parser.
+--> 620 parser = TextFileReader(filepath_or_buffer,**kwds)
+    622 if chunksize or iterator:
+    623     return parser
+
+File /opt/hostedtoolcache/Python/3.10.20/x64/lib/python3.10/site-packages/pandas/io/parsers/readers.py:1620, in TextFileReader.__init__(self, f, engine, **kwds)
+   1617     self.options["has_index_names"] = kwds["has_index_names"]
+   1619 self.handles: IOHandles | None = None
+-> 1620 self._engine = self._make_engine(f,self.engine)
+
+File /opt/hostedtoolcache/Python/3.10.20/x64/lib/python3.10/site-packages/pandas/io/parsers/readers.py:1880, in TextFileReader._make_engine(self, f, engine)
+   1878     if "b" not in mode:
+   1879         mode += "b"
+-> 1880 self.handles = get_handle(
+   1881 f,
+   1882 mode,
+   1883 encoding=self.options.get("encoding",None),
+   1884 compression=self.options.get("compression",None),
+   1885 memory_map=self.options.get("memory_map",False),
+   1886 is_text=is_text,
+   1887 errors=self.options.get("encoding_errors","strict"),
+   1888 storage_options=self.options.get("storage_options",None),
+   1889 )
+   1890 assert self.handles is not None
+   1891 f = self.handles.handle
+
+File /opt/hostedtoolcache/Python/3.10.20/x64/lib/python3.10/site-packages/pandas/io/common.py:873, in get_handle(path_or_buf, mode, encoding, compression, memory_map, is_text, errors, storage_options)
+    868 elif isinstance(handle, str):
+    869     # Check whether the filename is to be opened in binary mode.
+    870     # Binary mode does not support 'encoding' and 'newline'.
+    871     if ioargs.encoding and "b" not in ioargs.mode:
+    872         # Encoding
+--> 873         handle = open(
+    874 handle,
+    875 ioargs.mode,
+    876 encoding=ioargs.encoding,
+    877 errors=errors,
+    878 newline="",
+    879 )
+    880     else:
+    881         # Binary mode
+    882         handle = open(handle, ioargs.mode)
+
+FileNotFoundError: [Errno 2] No such file or directory: 'reports/ab_assignment.csv'
+
 Error: Process completed with exit code 1.
+
+
+
+
+3s
+Run # Set dummy env vars for tests to avoid connection errors
+============================= test session starts ==============================
+platform linux -- Python 3.10.19, pytest-9.0.2, pluggy-1.6.0 -- /opt/hostedtoolcache/Python/3.10.19/x64/bin/python
+cachedir: .pytest_cache
+rootdir: /home/runner/work/Scalable-Customer-Data-Platform-CDP/Scalable-Customer-Data-Platform-CDP
+configfile: pytest.ini
+plugins: anyio-4.12.1, cov-7.0.0, typeguard-4.5.1
+collecting ... collected 31 items
+
+tests/test_cleaning.py::test_convert_types_converts_total_charges_to_numeric PASSED [  3%]
+tests/test_cleaning.py::test_load_csv_missing_file_raises_value_error FAILED [  6%]
+tests/test_cleaning.py::test_functions_are_idempotent PASSED             [  9%]
+tests/test_cleaning.py::test_drop_invalid_rows_removes_nan_total_charges PASSED [ 12%]
+tests/test_cleaning.py::test_map_booleans_maps_Yes_No PASSED             [ 16%]
+tests/test_cleaning.py::test_save_parquet_writes_file_and_partitioning PASSED [ 19%]
+tests/test_cleaning.py::test_create_features_monthly_bin_none_on_insufficient_uniques PASSED [ 22%]
+tests/test_critical_gaps.py::TestSchemaValidation::test_validate_raw_success FAILED [ 25%]
+tests/test_critical_gaps.py::TestSchemaValidation::test_validate_raw_missing_column PASSED [ 29%]
+tests/test_critical_gaps.py::TestSchemaValidation::test_validate_processed_success PASSED [ 32%]
+tests/test_critical_gaps.py::TestSchemaValidation::test_get_schema_report PASSED [ 35%]
+tests/test_critical_gaps.py::TestDataLineage::test_lineage_registry_init PASSED [ 38%]
+tests/test_critical_gaps.py::TestDataLineage::test_log_transformation PASSED [ 41%]
+tests/test_critical_gaps.py::TestDataLineage::test_lineage_persistence PASSED [ 45%]
+tests/test_critical_gaps.py::TestDataLineage::test_get_lineage_chain PASSED [ 48%]
+tests/test_critical_gaps.py::TestIncrementalProcessing::test_incremental_init PASSED [ 51%]
+tests/test_critical_gaps.py::TestIncrementalProcessing::test_watermark_get_set PASSED [ 54%]
+tests/test_critical_gaps.py::TestIncrementalProcessing::test_get_changed_records PASSED [ 58%]
+tests/test_critical_gaps.py::TestObservability::test_metrics_collector_init PASSED [ 61%]
+tests/test_critical_gaps.py::TestObservability::test_collect_metrics PASSED [ 64%]
+tests/test_critical_gaps.py::TestObservability::test_sla_validator_pass PASSED [ 67%]
+tests/test_critical_gaps.py::TestObservability::test_sla_validator_fail PASSED [ 70%]
+tests/test_critical_gaps.py::TestPartitioning::test_validate_partition_layout_empty PASSED [ 74%]
+tests/test_critical_gaps.py::TestPartitioning::test_detect_partition_skew_empty PASSED [ 77%]
+tests/test_critical_gaps.py::TestPartitioning::test_validate_partition_completeness PASSED [ 80%]
+tests/test_critical_gaps.py::TestPartitioning::test_get_partition_statistics PASSED [ 83%]
+tests/test_main.py::test_run_pipeline_dry_run PASSED                     [ 87%]
+tests/test_main.py::test_run_pipeline_writes_parquet PASSED              [ 90%]
+tests/test_main.py::test_run_pipeline_with_lineage PASSED                [ 93%]
+tests/test_main.py::test_run_pipeline_with_metrics PASSED                [ 96%]
+tests/test_main.py::test_save_parquet_partition_conversion_fails PASSED  [100%]
+
+=================================== FAILURES ===================================
+________________ test_load_csv_missing_file_raises_value_error _________________
+
+    def test_load_csv_missing_file_raises_value_error():
+        from pathlib import Path
+>       from src.etl.cleaning import load_csv
+E       ImportError: cannot import name 'load_csv' from 'src.etl.cleaning' (/home/runner/work/Scalable-Customer-Data-Platform-CDP/Scalable-Customer-Data-Platform-CDP/src/etl/cleaning.py)
+
+tests/test_cleaning.py:41: ImportError
+________________ TestSchemaValidation.test_validate_raw_success ________________
+
+df =   CustomerID  Gender  SeniorCitizen  ... MonthlyCharges TotalCharges  Churn
+0         C1    Male              0  ...  ...        750.0      1
+2         C3    Male              0  ...          100.0       2400.0      0
+
+[3 rows x 11 columns]
+
+    def validate_raw(df: pd.DataFrame) -> pd.DataFrame:
+        """Validate raw data against RawTelcoSchema."""
+        try:
+>           return RawTelcoSchema.validate(df)
+
+src/etl/schema.py:66: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/opt/hostedtoolcache/Python/3.10.19/x64/lib/python3.10/site-packages/pandera/api/pandas/container.py:117: in validate
+    return self._validate(
+/opt/hostedtoolcache/Python/3.10.19/x64/lib/python3.10/site-packages/pandera/api/pandas/container.py:137: in _validate
+    return self.get_backend(check_obj).validate(
+/opt/hostedtoolcache/Python/3.10.19/x64/lib/python3.10/site-packages/pandera/backends/pandas/container.py:107: in validate
+    error_handler = self.run_checks_and_handle_errors(
+/opt/hostedtoolcache/Python/3.10.19/x64/lib/python3.10/site-packages/pandera/backends/pandas/container.py:194: in run_checks_and_handle_errors
+    error_handler.collect_error(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <pandera.api.base.error_handler.ErrorHandler object at 0x7f2c64b62650>
+error_type = <ErrorCategory.SCHEMA: 'schema-failures'>
+reason_code = <SchemaErrorReason.COLUMN_NOT_IN_DATAFRAME: 'column_not_in_dataframe'>
+schema_error = SchemaError("column 'tenure' not in dataframe. Columns in dataframe: ['CustomerID', 'Gender', 'SeniorCitizen', 'Partner', 'Dependents', 'Tenure Months', 'PhoneService', 'InternetService', 'MonthlyCharges', 'TotalCharges', 'Churn']")
+original_exc = None
+
+    def collect_error(
+        self,
+        error_type: ErrorCategory,
+        reason_code: SchemaErrorReason | None,
+        schema_error: SchemaError,
+        original_exc: Union[BaseException, None] = None,
+    ):
+        """Collect schema error, raising exception if lazy is False.
+    
+        :param error_type: type of error
+        :param reason_code: string representing reason for error
+        :param schema_error: ``SchemaError`` object.
+        """
+        if not self._lazy:
+>           raise schema_error from original_exc
+E           pandera.errors.SchemaError: column 'tenure' not in dataframe. Columns in dataframe: ['CustomerID', 'Gender', 'SeniorCitizen', 'Partner', 'Dependents', 'Tenure Months', 'PhoneService', 'InternetService', 'MonthlyCharges', 'TotalCharges', 'Churn']
+
+/opt/hostedtoolcache/Python/3.10.19/x64/lib/python3.10/site-packages/pandera/api/base/error_handler.py:98: SchemaError
+
+The above exception was the direct cause of the following exception:
+
+self = <test_critical_gaps.TestSchemaValidation object at 0x7f2c64b601f0>
+tmp_df =   CustomerID  Gender  SeniorCitizen  ... MonthlyCharges TotalCharges  Churn
+0         C1    Male              0  ...  ...        750.0      1
+2         C3    Male              0  ...          100.0       2400.0      0
+
+[3 rows x 11 columns]
+
+    def test_validate_raw_success(self, tmp_df):
+        """Valid raw data should pass validation."""
+        # tmp_df is a valid Telco DataFrame
+>       result = validate_raw(tmp_df)
+
+tests/test_critical_gaps.py:30: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+df =   CustomerID  Gender  SeniorCitizen  ... MonthlyCharges TotalCharges  Churn
+0         C1    Male              0  ...  ...        750.0      1
+2         C3    Male              0  ...          100.0       2400.0      0
+
+[3 rows x 11 columns]
+
+    def validate_raw(df: pd.DataFrame) -> pd.DataFrame:
+        """Validate raw data against RawTelcoSchema."""
+        try:
+            return RawTelcoSchema.validate(df)
+        except pa.errors.SchemaError as e:
+>           raise ValueError(f"Raw schema validation failed:\n{e}") from e
+E           ValueError: Raw schema validation failed:
+E           column 'tenure' not in dataframe. Columns in dataframe: ['CustomerID', 'Gender', 'SeniorCitizen', 'Partner', 'Dependents', 'Tenure Months', 'PhoneService', 'InternetService', 'MonthlyCharges', 'TotalCharges', 'Churn']
+
+src/etl/schema.py:68: ValueError
+=============================== warnings summary ===============================
+../../../../../opt/hostedtoolcache/Python/3.10.19/x64/lib/python3.10/site-packages/pandera/_pandas_deprecated.py:146
+  /opt/hostedtoolcache/Python/3.10.19/x64/lib/python3.10/site-packages/pandera/_pandas_deprecated.py:146: FutureWarning: Importing pandas-specific classes and functions from the
+  top-level pandera module will be **removed in a future version of pandera**.
+  If you're using pandera to validate pandas objects, we highly recommend updating
+  your import:
+  
+  ```
+  # old import
+  import pandera as pa
+  
+  # new import
+  import pandera.pandas as pa
+  ```
+  
+  If you're using pandera to validate objects from other compatible libraries
+  like pyspark or polars, see the supported libraries section of the documentation
+  for more information on how to import pandera:
+  
+  https://pandera.readthedocs.io/en/stable/supported_libraries.html
+  
+  To disable this warning, set the environment variable:
+  
+  ```
+  export DISABLE_PANDERA_IMPORT_WARNING=True
+  ```
+  
+    warnings.warn(_future_warning, FutureWarning)
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/test_cleaning.py::test_load_csv_missing_file_raises_value_error - ImportError: cannot import name 'load_csv' from 'src.etl.cleaning' (/home/runner/work/Scalable-Customer-Data-Platform-CDP/Scalable-Customer-Data-Platform-CDP/src/etl/cleaning.py)
+FAILED tests/test_critical_gaps.py::TestSchemaValidation::test_validate_raw_success - ValueError: Raw schema validation failed:
+column 'tenure' not in dataframe. Columns in dataframe: ['CustomerID', 'Gender', 'SeniorCitizen', 'Partner', 'Dependents', 'Tenure Months', 'PhoneService', 'InternetService', 'MonthlyCharges', 'TotalCharges', 'Churn']
+=================== 2 failed, 29 passed, 1 warning in 1.89s ====================

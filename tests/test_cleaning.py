@@ -38,13 +38,13 @@ def test_convert_types_converts_total_charges_to_numeric():
 
 def test_load_csv_missing_file_raises_value_error():
     from pathlib import Path
-    from src.etl.cleaning import load_csv
+    from src.etl.cleaning import load_data
 
     p = Path("this_file_does_not_exist_12345.csv")
     import pytest
 
     with pytest.raises(ValueError):
-        load_csv(str(p))
+        load_data(str(p))
 
 
 def test_functions_are_idempotent(tmp_df):
@@ -54,9 +54,10 @@ def test_functions_are_idempotent(tmp_df):
     working = tmp_df.copy()
     # call functions
     _ = convert_types(
-        working, numeric_cols=["Total Charges", "Monthly Charges", "Tenure Months"]
+        working, numeric_cols=["Total Charges", "Monthly Charges", "tenure"]
     )
     # original not changed
+
     assert orig.equals(tmp_df)
     working = tmp_df.copy()
     _ = drop_invalid_rows(working, subset=("Total Charges",))

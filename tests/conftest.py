@@ -20,7 +20,7 @@ def tmp_df():
             "SeniorCitizen": [0, 1, 0],
             "Partner": ["Yes", "No", "Yes"],
             "Dependents": ["No", "No", "Yes"],
-            "Tenure Months": [1, 10, 24],
+            "tenure": [1, 10, 24],
             "PhoneService": ["Yes", "Yes", "No"],
             "InternetService": ["DSL", "Fiber Optic", "No"],
             "MonthlyCharges": [50.0, 75.0, 100.0],
