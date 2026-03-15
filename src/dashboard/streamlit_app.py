@@ -234,7 +234,7 @@ try:
         if runs:
             r = runs[0]
             acc = r.data.metrics.get("accuracy")
-            st.success(f"Mô hình mới nhất đang hoạt động!")
+            st.success("Mô hình mới nhất đang hoạt động!")
             st.json({
                 "Run ID": r.info.run_id,
                 "Độ chính xác (Accuracy)": acc,

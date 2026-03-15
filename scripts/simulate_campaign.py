@@ -4,7 +4,6 @@ import random
 import time
 from pathlib import Path
 
-from pathlib import Path
 
 # Discover service port written by start_ab_service.py, fallback to default
 PORT_FILE = Path('reports/ab_service_port.txt')

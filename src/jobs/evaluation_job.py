@@ -1,5 +1,4 @@
 import json
-import os
 from pathlib import Path
 
 try:
@@ -9,7 +8,7 @@ except Exception:
 import numpy as np
 import pandas as pd
 from sklearn.linear_model import LogisticRegression
-from sklearn.metrics import roc_auc_score, precision_score
+from sklearn.metrics import roc_auc_score
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import OneHotEncoder
 

@@ -7,7 +7,6 @@ from sqlalchemy import (
     Integer,
     String,
     Float,
-    DateTime,
 )
 from sqlalchemy.exc import SQLAlchemyError
 from datetime import datetime
