@@ -90,6 +90,7 @@ jobs:
           jupyter nbconvert --to notebook --execute notebooks/ab_analysis.ipynb \
             --ExecutePreprocessor.timeout=600 \
             --ExecutePreprocessor.kernel_name=python3 \
+            --ExecutePreprocessor.base_path=. \
             --output ci_outputs/ab_analysis_executed.ipynb
 
       - name: Run CLI analyzer as additional guard
