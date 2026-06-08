@@ -5,9 +5,21 @@ __pycache__/
 .pytest_cache/
 .ruff_cache/
 
-# Windows Binaries
-bin/
+# Data & Models
 data/
+mlruns/
+mlflow.db
+models/
+ci_outputs/
+tests/results/
+test.db
+
+# Dependencies
+node_modules/
+airflow-requirements.txt
+
+# Windows Binaries & Logs
+bin/
 hadoop_libs/
 *.exe
 *.dll
@@ -16,6 +28,12 @@ hadoop_libs/
 # IDE settings
 .vscode/
 .idea/
-node_modules
 text_cicd.txt
 test_cicd.txt
+
+# OS artifacts
+.DS_Store
+Thumbs.db  
+
+
+.env

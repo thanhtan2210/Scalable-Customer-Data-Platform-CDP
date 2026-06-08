@@ -1,25 +1,29 @@
-install:
-	pip install -r requirements.txt
-	pip install ruff black pytest pytest-cov
+.PHONY: dev test lint migrate shell
+
+# Environment variables
+PYTHONPATH := $(shell pwd)
+
+# Local Development
+dev:
+	docker-compose up --build
+
+# Backend tasks
+test:
+	python -m pytest backend/tests -v
 
 lint:
-	ruff check .
+	ruff check backend/app
+	black backend/app --check
+	mypy backend/app
 
-format-check:
-	black --check .
+# Database migrations
+migrate-init:
+	cd backend/app/db && alembic init migrations
 
-format-fix:
-	black .
-	ruff check . --fix
+migrate:
+	cd backend/app/db && alembic upgrade head
 
-test:
-	@mkdir -p data/raw data/parquet data/processed
-	export MLFLOW_TRACKING_URI=http://localhost:5000; \
-	export DATABASE_URL=postgresql://user:pass@localhost:5432/db; \
-	pytest tests/ -v --maxfail=3
-
-ci: lint format-check test
-	@echo "✅ All local CI checks passed!"
-
-etl:
-	python launcher.py
+# Clean up
+clean:
+	docker-compose down -v
+	find . -type d -name "__pycache__" -exec rm -rf {} +

@@ -27,3 +27,9 @@ great_expectations
 alembic
 sqlalchemy
 psycopg2-binary
+fastapi
+uvicorn
+python-multipart
+optuna
+requests
+pydantic

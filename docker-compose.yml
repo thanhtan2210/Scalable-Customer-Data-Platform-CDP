@@ -1,134 +1,76 @@
-version: '3.7'
-
 services:
-  # 1. MinIO (S3 Compatible Storage) - Replaces local file storage
-  minio:
-    image: minio/minio:latest
-    container_name: cdp_minio
-    ports:
-      - "9000:9000" # API Port
-      - "9001:9001" # Console Port
+  # Database: Supabase local alternative
+  db:
+    image: postgres:15-alpine
+    container_name: churn_platform_db
+    restart: always
     environment:
-      MINIO_ROOT_USER: admin
-      MINIO_ROOT_PASSWORD: password
-    command: server /data --console-address ":9001"
-    volumes:
-      - minio_data:/data
-    healthcheck:
-      test: [ "CMD", "curl", "-f", "http://localhost:9000/minio/health/live" ]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
-  # 2. MLflow (Model Tracking)
-  mlflow:
-    image: ghcr.io/mlflow/mlflow:v2.8.1
-    container_name: cdp_mlflow
-    ports:
-      - "5000:5000"
-    environment:
-      MLFLOW_BACKEND_STORE_URI: sqlite:////mlflow/mlflow.db
-      MLFLOW_DEFAULT_ARTIFACT_ROOT: s3://mlflow/
-      MLFLOW_S3_ENDPOINT_URL: http://minio:9000
-      AWS_ACCESS_KEY_ID: admin
-      AWS_SECRET_ACCESS_KEY: password
-    command: mlflow server --backend-store-uri sqlite:////mlflow/mlflow.db --default-artifact-root s3://mlflow/ --host 0.0.0.0
-    depends_on:
-      - minio
-    healthcheck:
-      test: [ "CMD", "curl", "-f", "http://localhost:5000/" ]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    volumes:
-      - mlflow_data:/mlflow
-    restart: unless-stopped
-
-  # 3. FastAPI (Model Serving)
-  api:
-    build:
-      context: .
-      dockerfile: deploy/api/Dockerfile
-    container_name: cdp_api
-    ports:
-      - "8000:8000"
-    environment:
-      # Point API to in-compose services
-      MLFLOW_S3_ENDPOINT_URL: http://minio:9000
-      AWS_ACCESS_KEY_ID: admin
-      AWS_SECRET_ACCESS_KEY: password
-      MLFLOW_TRACKING_URI: http://mlflow:5000
-      MODEL_NAME: TelcoChurnModel
-      MODEL_VERSION: "1"
-    depends_on:
-      - minio
-      - mlflow
-    healthcheck:
-      test: [ "CMD", "curl", "-f", "http://localhost:8000/" ]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
-  streamlit:
-    build:
-      context: ./deploy/streamlit
-      dockerfile: Dockerfile
-    container_name: cdp_streamlit
-    ports:
-      - "8501:8501"
-    environment:
-      MLFLOW_S3_ENDPOINT_URL: http://minio:9000
-      AWS_ACCESS_KEY_ID: admin
-      AWS_SECRET_ACCESS_KEY: password
-      PROCESSED_FEATURES_PATH: s3://datalake/processed/features
-    depends_on:
-      - minio
-      - mlflow
-    healthcheck:
-      test: [ "CMD", "curl", "-f", "http://localhost:8501/" ]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
-  ab_service:
-    build:
-      context: .
-      dockerfile: deploy/ab_service.Dockerfile
-    container_name: cdp_ab_service
-    ports:
-      - "8080:8080"
-    volumes:
-      - ./reports:/app/reports
-    depends_on:
-      - minio
-      - postgres
-    healthcheck:
-      test: [ "CMD", "curl", "-f", "http://localhost:8080/health" ]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    environment:
-      DATABASE_URL: postgresql://postgres:password@postgres:5432/abdb
-    restart: unless-stopped
-
-  postgres:
-    image: postgres:15
-    container_name: cdp_postgres
-    environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: password
-      POSTGRES_DB: abdb
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-password}
+      POSTGRES_DB: ${POSTGRES_DB:-churn_db}
     ports:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
-    healthcheck:
-      test: [ "CMD-SHELL", "pg_isready -U postgres" ]
-      interval: 10s
-      timeout: 5s
-      retries: 5
+
+  # Object Storage: Cloudflare R2 local alternative
+  minio:
+    image: minio/minio:latest
+    container_name: churn_platform_s3
+    ports:
+      - "9000:9000" # API
+      - "9001:9001" # Console
+    environment:
+      MINIO_ROOT_USER: ${S3_ACCESS_KEY:-admin}
+      MINIO_ROOT_PASSWORD: ${S3_SECRET_KEY:-password}
+    command: server /data --console-address ":9001"
+    volumes:
+      - minio_data:/data
+
+  # MLflow Tracking Server
+  mlflow:
+    image: ghcr.io/mlflow/mlflow:latest
+    container_name: churn_platform_mlflow
+    ports:
+      - "5000:5000"
+    environment:
+      - AWS_ACCESS_KEY_ID=${S3_ACCESS_KEY:-admin}
+      - AWS_SECRET_ACCESS_KEY=${S3_SECRET_KEY:-password}
+      - MLFLOW_S3_ENDPOINT_URL=http://minio:9000
+    command: >
+      mlflow server 
+      --backend-store-uri postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-password}@db:5432/${POSTGRES_DB:-churn_db}
+      --default-artifact-root s3://mlflow/
+      --host 0.0.0.0
+    depends_on:
+      - db
+      - minio
+
+  # Backend: FastAPI
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    container_name: churn_platform_api
+    ports:
+      - "8000:8000"
+    env_file: .env
+    depends_on:
+      - db
+      - minio
+
+  # Analytics: Streamlit
+  analytics:
+    build:
+      context: .
+      dockerfile: analytics/Dockerfile
+    container_name: churn_platform_analytics
+    ports:
+      - "8501:8501"
+    env_file: .env
+    depends_on:
+      - backend
 
 volumes:
-  minio_data:
   postgres_data:
-  mlflow_data:
+  minio_data:
