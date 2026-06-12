@@ -34,9 +34,11 @@ MLFLOW_S3_ENDPOINT_URL: str = os.getenv("MLFLOW_S3_ENDPOINT_URL", S3_ENDPOINT_UR
 AWS_ACCESS_KEY_ID: str = os.getenv("AWS_ACCESS_KEY_ID", S3_ACCESS_KEY_ID)
 AWS_SECRET_ACCESS_KEY: str = os.getenv("AWS_SECRET_ACCESS_KEY", S3_SECRET_ACCESS_KEY)
 
-# MLflow
+# MLflow Tracking Configuration
 MLFLOW_TRACKING_URI: str = os.getenv("MLFLOW_TRACKING_URI", "http://localhost:5000")
-MODEL_NAME: str = os.getenv("MODEL_NAME", "TelcoChurnModel")
+MLFLOW_TRACKING_USERNAME: str | None = os.getenv("MLFLOW_TRACKING_USERNAME")
+MLFLOW_TRACKING_PASSWORD: str | None = os.getenv("MLFLOW_TRACKING_PASSWORD") # DagsHub Token
+MODEL_NAME: str = os.getenv("MODEL_NAME", "universal_churn_model")
 MODEL_STAGE: str = os.getenv("MODEL_STAGE", "None")
 MODEL_VERSION: str = os.getenv("MODEL_VERSION", "1")
 

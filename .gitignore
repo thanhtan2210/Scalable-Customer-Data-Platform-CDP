@@ -35,5 +35,8 @@ test_cicd.txt
 .DS_Store
 Thumbs.db  
 
+# External Binaries
+scripts/Eclipse Adoptium/
+scripts/hadoop/
 
 .env
