@@ -1,0 +1,14 @@
+# --- LOAD CORE REQUIREMENTS ---
+-r requirements.txt
+
+# --- TESTING ---
+pytest
+pytest-cov
+httpx  # Required by FastAPI TestClient
+
+# --- LINTING & FORMATTING ---
+ruff
+flake8
+mypy
+black
+isort

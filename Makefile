@@ -3,6 +3,10 @@
 # Environment variables
 PYTHONPATH := $(shell pwd)
 
+# Install local dependencies
+install-local:
+	pip install -r requirements-local.txt
+
 # Local Development
 dev:
 	docker-compose up --build

@@ -1,35 +1,40 @@
+# --- CORE AI & DATA PROCESSING ---
 pandera
-pandas 
+pandas
 numpy
-matplotlib 
-seaborn
-openpyxl
-statsmodels
 scipy
 scikit-learn
-pyarrow
 xgboost
 joblib
+statsmodels
+pyarrow
+
+# --- BIG DATA (Optional, kept for legacy compatibility) ---
 pyspark==3.4.1
-pytest
-pytest-cov
-ruff
-flake8
-mypy
-black
-isort
-s3fs
-fsspec
+
+# --- ML OPS & ORCHESTRATION ---
 mlflow>=2.12,<3
-boto3
-streamlit
-great_expectations
-alembic
-sqlalchemy
-psycopg2-binary
+optuna
+
+# --- BACKEND (FASTAPI) ---
 fastapi
 uvicorn
-python-multipart
-optuna
-requests
 pydantic
+python-multipart
+requests
+
+# --- DATABASE ---
+sqlalchemy
+alembic
+psycopg2-binary
+
+# --- CLOUD & STORAGE ---
+boto3
+s3fs
+fsspec
+
+# --- ANALYTICS (STREAMLIT) ---
+streamlit
+matplotlib
+seaborn
+openpyxl
