@@ -38,6 +38,10 @@ AWS_SECRET_ACCESS_KEY: str = os.getenv("AWS_SECRET_ACCESS_KEY", S3_SECRET_ACCESS
 MLFLOW_TRACKING_URI: str = os.getenv("MLFLOW_TRACKING_URI", "http://localhost:5000")
 MLFLOW_TRACKING_USERNAME: str | None = os.getenv("MLFLOW_TRACKING_USERNAME")
 MLFLOW_TRACKING_PASSWORD: str | None = os.getenv("MLFLOW_TRACKING_PASSWORD") # DagsHub Token
+
+# Database Configuration (Supabase / PostgreSQL)
+DATABASE_URL: str = os.getenv("DATABASE_URL", "sqlite:///./test.db")
+
 MODEL_NAME: str = os.getenv("MODEL_NAME", "universal_churn_model")
 MODEL_STAGE: str = os.getenv("MODEL_STAGE", "None")
 MODEL_VERSION: str = os.getenv("MODEL_VERSION", "1")
