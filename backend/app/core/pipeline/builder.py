@@ -1,43 +1,69 @@
-from typing import List
-from sklearn.pipeline import Pipeline
 from sklearn.compose import ColumnTransformer
-from sklearn.impute import SimpleImputer
-from .transforms.registry import TRANSFORM_REGISTRY
-from ..profiler.column_profile import ColumnProfile
+from sklearn.pipeline import Pipeline
+from sklearn.dummy import DummyClassifier
+from typing import List, Tuple
 
-def build_pipeline(profiles: List[ColumnProfile], target_col: str) -> Pipeline:
-    """Builds a dynamic scikit-learn Pipeline based on ColumnProfiles."""
+from ..profiler.column_profile import ColumnProfile, DataRole
+from .transforms.registry import get_imputer, get_transformer
+
+from ..exceptions import PipelineBuilderError
+
+def build_pipeline(confirmed_profiles: List[ColumnProfile], target_col: str) -> Pipeline:
+    """Builds a scikit-learn Pipeline based on user-confirmed column profiles."""
+    if not confirmed_profiles:
+        raise ValueError("Cannot build pipeline: Input profiles list is empty.")
+    if not target_col:
+        raise ValueError("Cannot build pipeline: target_col is missing.")
+        
+    features = []
     
-    transformers = []
-    
-    # Group profiles by transform strategy
-    strategy_groups = {}
-    for p in profiles:
-        if p.name == target_col or p.transform_strategy == "drop":
+    # Filter columns
+    for p in confirmed_profiles:
+        if p.inferred_role in [DataRole.ID, DataRole.IGNORE, DataRole.TARGET]:
             continue
+        if p.name == target_col:
+            continue
+        features.append(p)
         
-        if p.transform_strategy not in strategy_groups:
-            strategy_groups[p.transform_strategy] = []
-        strategy_groups[p.transform_strategy].append(p)
-
-    for strategy, group_profiles in strategy_groups.items():
-        col_names = [p.name for p in group_profiles]
+    if not features:
+        raise PipelineBuilderError("No valid feature columns remaining after filtering. Check leakage flags and column roles before training.")
         
-        # 1. Imputation Step
-        # For simplicity in this builder, we assume same strategy within a transform group or use most frequent
-        impute_strategy = group_profiles[0].impute_strategy
-        if impute_strategy == "none":
-             impute_step = TRANSFORM_REGISTRY[strategy]
-        else:
-            impute_step = Pipeline([
-                ("imputer", SimpleImputer(strategy=impute_strategy)),
-                ("transform", TRANSFORM_REGISTRY[strategy])
-            ])
+    # Group by (impute_strategy, transform_strategy)
+    groups = {}
+    for p in features:
+        # tfidf needs to be per-column because TfidfVectorizer expects 1D input
+        key = (p.impute_strategy, p.transform_strategy, p.name if p.transform_strategy == "tfidf" else None)
+        if key not in groups:
+            groups[key] = []
+        groups[key].append(p.name)
+        
+    transformers = []
+    for (impute_strat, transform_strat, _), cols in groups.items():
+        if impute_strat == "drop" and transform_strat == "drop":
+            continue
             
-        transformers.append((f"{strategy}_branch", impute_step, col_names))
-
+        steps = []
+        imputer = get_imputer(impute_strat)
+        if imputer != "drop":
+            steps.append(("imputer", imputer))
+            
+        transformer = get_transformer(transform_strat)
+        if transformer != "drop":
+            steps.append(("transformer", transformer))
+            
+        if steps:
+            # Create a sub-pipeline for this group
+            pipe = Pipeline(steps)
+            step_name = f"pipe_{transform_strat}_{cols[0]}" if transform_strat == "tfidf" else f"pipe_{impute_strat}_{transform_strat}"
+            transformers.append((step_name, pipe, cols))
+            
+    if not transformers:
+        raise ValueError("Cannot build pipeline: No valid transformers resolved.")
+        
     preprocessor = ColumnTransformer(transformers=transformers, remainder='drop')
     
+    # Final pipeline with a placeholder classifier
     return Pipeline([
-        ("preprocessor", preprocessor)
+        ('preprocessor', preprocessor),
+        ('model', DummyClassifier(strategy="prior"))
     ])
