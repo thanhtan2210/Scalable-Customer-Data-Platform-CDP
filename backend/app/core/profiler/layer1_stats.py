@@ -62,6 +62,14 @@ def profile_column(series: pd.Series) -> dict:
         role = DataRole.CATEGORICAL
         confidence = 0.4 # Need layer 2
         
+    skew_val = float(skew(clean_series)) if inferred_dtype in ['float64', 'int64'] and not clean_series.empty else 0.0
+    if np.isnan(skew_val):
+        skew_val = 0.0
+        
+    kurt_val = float(kurtosis(clean_series)) if inferred_dtype in ['float64', 'int64'] and not clean_series.empty else 0.0
+    if np.isnan(kurt_val):
+        kurt_val = 0.0
+        
     return {
         "name": series.name,
         "inferred_dtype": inferred_dtype,
@@ -70,6 +78,8 @@ def profile_column(series: pd.Series) -> dict:
         "null_pct": null_pct,
         "unique_count": unique_count,
         "entropy": norm_entropy,
-        "skewness": float(skew(clean_series)) if inferred_dtype in ['float64', 'int64'] and not clean_series.empty else None,
-        "kurtosis": float(kurtosis(clean_series)) if inferred_dtype in ['float64', 'int64'] and not clean_series.empty else None
+        "norm_entropy": norm_entropy,
+        "cardinality_ratio": cardinality_ratio,
+        "skewness": skew_val,
+        "kurtosis": kurt_val
     }
