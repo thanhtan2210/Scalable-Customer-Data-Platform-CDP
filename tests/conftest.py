@@ -1,6 +1,10 @@
 import logging
+import os
 import pandas as pd
 import pytest
+
+# Force MLflow to use local tracking URI during test runs to avoid slow remote HTTP calls to Dagshub
+os.environ["MLFLOW_TRACKING_URI"] = "file:./mlruns_test"
 
 
 @pytest.fixture(autouse=True)

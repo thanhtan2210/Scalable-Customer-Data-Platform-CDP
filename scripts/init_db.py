@@ -1,7 +1,7 @@
 """Initialize exposures DB (uses DATABASE_URL env var)."""
 
 import os
-from src.services.exposure_store import init_db
+from backend.app.core.services.exposure_store import init_db
 
 
 def main():

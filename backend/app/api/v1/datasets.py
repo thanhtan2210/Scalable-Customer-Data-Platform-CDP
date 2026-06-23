@@ -74,11 +74,7 @@ async def profile_dataset(dataset_id: str, db: Session = Depends(get_db)):
     df = pd.read_csv(io.BytesIO(content)) if dataset.filename.endswith('.csv') else pd.read_parquet(io.BytesIO(content))
     
     # 2. Run Profiling
-    profiles = run_profiling(df)
-    
-    # 3. Suggest Target
-    target_candidates = [p for p in profiles if p.inferred_role == "target"]
-    suggested_target = max(target_candidates, key=lambda p: p.confidence).name if target_candidates else None
+    profiles, suggested_target = run_profiling(df)
     
     # 4. Save to DB
     new_profile = Profile(

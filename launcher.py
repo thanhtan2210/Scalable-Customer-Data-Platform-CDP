@@ -5,7 +5,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-# Add project root to sys.path to enable module imports from src/
+# Add project root to sys.path to enable module imports
 BASE_DIR = Path(__file__).resolve().parent
 sys.path.append(str(BASE_DIR))
 
@@ -25,7 +25,7 @@ def run_spark_clean():
     """Execute Spark data cleaning process."""
     print("🚀 Running Spark Data Cleaning...")
     setup_spark_env()
-    from src.jobs.clean_data_spark import run as spark_run
+    from backend.jobs.jobs.clean_data_spark import run as spark_run
 
     spark_run()
 
@@ -39,7 +39,7 @@ def run_ab_service():
                 sys.executable,
                 "-m",
                 "uvicorn",
-                "src.api.ab_service:app",
+                "backend.app.core.serving.ab_service:app",
                 "--host",
                 "0.0.0.0",
                 "--port",
@@ -60,7 +60,7 @@ def run_churn_api():
                 sys.executable,
                 "-m",
                 "uvicorn",
-                "src.api.main:app",
+                "backend.app.main:app",
                 "--host",
                 "0.0.0.0",
                 "--port",
@@ -75,7 +75,7 @@ def run_churn_api():
 def run_dashboard():
     """Launch the Streamlit dashboard."""
     print("📊 Starting Sales Dashboard (Streamlit)...")
-    dashboard_path = BASE_DIR / "src" / "dashboard" / "streamlit_app.py"
+    dashboard_path = BASE_DIR / "analytics" / "streamlit_app.py"
     try:
         subprocess.run(["streamlit", "run", str(dashboard_path)])
     except KeyboardInterrupt:
@@ -84,26 +84,15 @@ def run_dashboard():
 
 def run_pipeline():
     """Execute the full data pipeline."""
-    print("⚙️ Running Entire Data Pipeline...")
-    from src.main import run_pipeline as main_pipeline
-
-    # Define default paths for the pipeline
-    input_csv = os.path.join(BASE_DIR, "data", "raw", "Telco_customer_churn.xlsx")
-    out_dir = os.path.join(BASE_DIR, "data", "parquet", "processed")
-
-    main_pipeline(
-        input_csv=input_csv,
-        out_dir=out_dir,
-        validate=True,
-        track_lineage=True,
-        track_metrics=True,
-    )
+    print("⚙️ Running Entire Data Pipeline (Pandas fallback)...")
+    from backend.jobs.jobs.clean_data import run_job
+    run_job()
 
 
 def run_train():
     """Train the churn prediction model (with MLflow tracking)."""
     print("🧠 Training Churn Model with MLflow tracking...")
-    from src.models.train_mlflow import train
+    from backend.app.core.training.train_mlflow import train
 
     train()
 

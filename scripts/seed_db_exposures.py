@@ -10,7 +10,7 @@ import random
 import hashlib
 from pathlib import Path
 
-from src.services.exposure_store import init_db, insert_exposure
+from backend.app.core.services.exposure_store import init_db, insert_exposure
 
 DATA_CSV = Path("data/raw/cleaned_telco.csv")
 

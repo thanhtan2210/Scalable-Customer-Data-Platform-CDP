@@ -6,7 +6,7 @@ import json
 import time
 import os
 
-from src.services import exposure_store
+from ..services import exposure_store
 from fastapi.responses import JSONResponse
 
 app = FastAPI(title="AB Assignment & Logging Service")

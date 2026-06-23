@@ -3,7 +3,7 @@ from pathlib import Path
 import boto3
 from botocore.config import Config
 
-from backend.app.core.config import (
+from .config import (
     STORAGE_MODE,
     S3_ENDPOINT_URL,
     S3_ACCESS_KEY_ID,
