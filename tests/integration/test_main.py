@@ -2,7 +2,7 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
-from src.main import run_pipeline
+from backend.app.core.etl.main import run_pipeline
 
 
 def test_run_pipeline_dry_run(tmp_csv, tmp_path):
@@ -102,7 +102,7 @@ def test_run_pipeline_with_metrics(tmp_csv, tmp_path):
 
 def test_save_parquet_partition_conversion_fails(tmp_df, tmp_path):
     """If partition column cannot be converted to datetime, save_parquet should raise."""
-    from src.etl.cleaning import save_parquet
+    from backend.app.core.etl.cleaning import save_parquet
 
     df = tmp_df.copy()
     df["bad_date"] = ["notadate", "stillbad", "yup"]

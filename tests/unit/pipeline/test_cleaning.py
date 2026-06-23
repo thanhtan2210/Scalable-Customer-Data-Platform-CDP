@@ -5,27 +5,13 @@ import sys
 import numpy as np
 import pandas as pd
 
-try:
-    from src.etl.cleaning import (
-        convert_types,
-        drop_invalid_rows,
-        map_booleans,
-        save_parquet,
-        create_features,
-    )
-except ModuleNotFoundError:
-    # When executed directly (python tests/test_cleaning.py) the working dir
-    # is tests/, not the project root. Append the project root to sys.path
-    # so 'src' is importable in both contexts.
-    root = Path(__file__).resolve().parents[1]
-    sys.path.append(str(root))
-    from src.etl.cleaning import (
-        convert_types,
-        drop_invalid_rows,
-        map_booleans,
-        save_parquet,
-        create_features,
-    )
+from backend.app.core.etl.cleaning import (
+    convert_types,
+    drop_invalid_rows,
+    map_booleans,
+    save_parquet,
+    create_features,
+)
 
 
 def test_convert_types_converts_total_charges_to_numeric():
@@ -38,7 +24,7 @@ def test_convert_types_converts_total_charges_to_numeric():
 
 def test_load_csv_missing_file_raises_value_error():
     from pathlib import Path
-    from src.etl.cleaning import load_data
+    from backend.app.core.etl.cleaning import load_data
 
     p = Path("this_file_does_not_exist_12345.csv")
     import pytest
@@ -113,7 +99,7 @@ def test_save_parquet_writes_file_and_partitioning(tmp_path):
 
 
 def test_create_features_monthly_bin_none_on_insufficient_uniques():
-    from src.etl.cleaning import create_features
+    from backend.app.core.etl.cleaning import create_features
 
     df = pd.DataFrame(
         {"Monthly Charges": [10.0, 10.0, 10.0], "Tenure Months": [1, 2, 3]}

@@ -4,16 +4,16 @@ import json
 import pandas as pd
 import pytest
 
-from src.etl.schema import (
+from backend.app.core.etl.schema import (
     validate_raw,
     validate_processed,
     get_schema_report,
     RawTelcoSchema,
 )
-from src.etl.lineage import DataLineageRegistry
-from src.etl.incremental import IncrementalProcessor
-from src.etl.observability import MetricsCollector, SLAValidator
-from src.etl.partitioning import (
+from backend.app.core.etl.lineage import DataLineageRegistry
+from backend.app.core.etl.incremental import IncrementalProcessor
+from backend.app.core.etl.observability import MetricsCollector, SLAValidator
+from backend.app.core.etl.partitioning import (
     validate_partition_layout,
     detect_partition_skew,
     validate_partition_completeness,
