@@ -8,6 +8,7 @@ __pycache__/
 # Data & Models
 data/
 mlruns/
+mlruns_test/
 mlflow.db
 models/
 ci_outputs/
