@@ -41,3 +41,5 @@ scripts/Eclipse Adoptium/
 scripts/hadoop/
 
 .env
+.coverage
+htmlcov/

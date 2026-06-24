@@ -44,6 +44,10 @@ The engine executes sequentially. Layer 1 establishes the baseline. Layer 2 refi
 | **Layer 2: Semantic** | Text/Object Series | `mean_length`, `regex_pattern`, Refined `inferred_role`, Adjusted `confidence_score` | If `confidence_score < 0.6`, proceed to Layer 3. |
 | **Layer 3: LLM (Optional)** | Stats + Sample Values | Final `inferred_role`, Max `confidence_score` | Execution halts; profile is locked. |
 
+### Orchestrator output contract
+- **Output:** `(List[ColumnProfile], TargetAnalysis)`
+- See details in [target_analysis_design.md](file:///d:/Bon%20Bon/SourceCode/AI-project/Scalable-Customer-Data-Platform-CDP/docs/architecture/phase1/target_analysis_design.md)
+
 ## 4. Zero-Assumption Target Detection
 Target detection evaluates data behavior, not domain-specific naming conventions. The system scores columns to elect a `suggested_target`, prioritizing statistical suitability over naming hints.
 
@@ -53,6 +57,8 @@ Target detection evaluates data behavior, not domain-specific naming conventions
 *   **Secondary Signals (Bootstrapping):**
     *   **Position:** Column located at the end or penultimate index of the DataFrame (+0.1 confidence).
     *   **Keyword Match:** Name contains generic indicators like 'target', 'label', 'churn', 'status' (+0.1 confidence).
+
+*Note: See the updated entropy scoring scale and rationale in [target_analysis_design.md](file:///d:/Bon%20Bon/SourceCode/AI-project/Scalable-Customer-Data-Platform-CDP/docs/architecture/phase1/target_analysis_design.md#4-updated-entropy-scoring) section 4.*
 
 ## 5. Data Leakage Detection
 To prevent future-predicting variables from ruining models, leakage checks are performed non-destructively. Columns are flagged, not dropped, ensuring human oversight.
@@ -79,3 +85,4 @@ The current profiling engine is bounded by the MVP requirements and intentionall
 - **Time-Series Churn:** Requires panel data processing (e.g., rolling windows, lagged features) which is unsupported; assumes a single flattened row per customer.
 - **Unstructured Media:** Image and Audio columns are strictly out of scope and will cause ingestion failure or be forcefully ignored.
 - **Complex Hierarchies:** Nested JSON arrays or XML blobs within columns are not automatically flattened and will likely be profiled as useless `ID` or `IGNORE` text fields.
+- **Multi-label Target:** Selecting multiple targets simultaneously is out of scope — the system supports exactly one PRIMARY target; related columns are processed as AUXILIARY or LEAKAGE_SUSPECT in the TargetAnalysis.

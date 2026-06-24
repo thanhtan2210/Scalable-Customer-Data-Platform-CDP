@@ -16,7 +16,7 @@ def test_telco_churn_dataset():
     profiles, suggested_target = run_profiling(df)
     
     assert len(profiles) == 4
-    assert suggested_target == "Churn"
+    assert suggested_target.recommended_target == "Churn"
     
     target_prof = next(p for p in profiles if p.inferred_role == DataRole.TARGET)
     assert target_prof.name == "Churn"
@@ -37,7 +37,7 @@ def test_credit_scoring_dataset():
     
     profiles, suggested_target = run_profiling(df)
     
-    assert suggested_target == "default_status"
+    assert suggested_target.recommended_target == "default_status"
     target_prof = next(p for p in profiles if p.inferred_role == DataRole.TARGET)
     assert target_prof.name == "default_status"
     

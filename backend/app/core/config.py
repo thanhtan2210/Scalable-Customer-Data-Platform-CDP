@@ -53,3 +53,20 @@ RAW_PARQUET_PATH: str = os.getenv(
 PROCESSED_FEATURES_PATH: str = os.getenv(
     "PROCESSED_FEATURES_PATH", "s3://datalake/processed/features"
 )
+
+# Target Detection Entropy Scoring Configuration (Phase 1 Continuous Scoring)
+ENTROPY_LIMIT_LOW: float = float(os.getenv("ENTROPY_LIMIT_LOW", "0.5"))
+ENTROPY_LIMIT_MED: float = float(os.getenv("ENTROPY_LIMIT_MED", "0.75"))
+ENTROPY_LIMIT_HIGH: float = float(os.getenv("ENTROPY_LIMIT_HIGH", "0.95"))
+
+ENTROPY_SCORE_LOW: float = float(os.getenv("ENTROPY_SCORE_LOW", "0.2"))
+ENTROPY_SCORE_MED: float = float(os.getenv("ENTROPY_SCORE_MED", "0.6"))
+ENTROPY_SCORE_HIGH: float = float(os.getenv("ENTROPY_SCORE_HIGH", "0.8"))
+
+# Composite Target Synthesis Configuration
+CPI_MIN_COLUMNS: int = int(os.getenv("CPI_MIN_COLUMNS", "2"))
+CPI_VARIANCE_THRESHOLD: float = float(os.getenv("CPI_VARIANCE_THRESHOLD", "0.8"))
+CPI_AUTO_THRESHOLD: int = int(os.getenv("CPI_AUTO_THRESHOLD", "2"))
+COMPOSITE_SYNTHESIS_ENABLED: bool = os.getenv("COMPOSITE_SYNTHESIS_ENABLED", "True").lower() == "true"
+
+

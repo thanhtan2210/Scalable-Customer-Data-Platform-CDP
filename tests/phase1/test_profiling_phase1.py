@@ -7,7 +7,6 @@ from backend.app.core.profiler.column_profile import ColumnProfile, DataRole
 from backend.app.core.profiler.layer1_stats import profile_column
 from backend.app.core.profiler.layer2_semantic import detect_semantic
 from backend.app.core.profiler.orchestrator import run_profiling, detect_target, check_leakage
-from backend.app.core.profiler.target_analysis import TargetAnalysis
 
 def test_column_profile_schema():
     """
@@ -62,10 +61,6 @@ def test_layer1_stats_no_hardcoding():
     assert "entropy" in result, "Thiếu trường 'entropy' trong kết quả trả về của Layer 1!"
     assert "null_pct" in result, "Thiếu trường 'null_pct' trong kết quả trả về của Layer 1!"
     assert "inferred_role" in result, "Thiếu trường 'inferred_role' trong kết quả trả về của Layer 1!"
-    
-    # Kiểm tra cardinality_ratio
-    # Lưu ý: dict trả về thực tế từ profile_column có thể không có trực tiếp key 'cardinality_ratio'
-    # Chúng ta assert ở đây để kiểm chứng đúng đặc tả yêu cầu
     assert "cardinality_ratio" in result, "Thiếu trường 'cardinality_ratio' trong kết quả trả về của Layer 1!"
 
 def test_target_detection_domain_agnostic():
@@ -146,7 +141,6 @@ def test_layer2_text_role():
        - transform_strategy = "tfidf", impute_strategy = "constant"
     """
     # Tạo dataset 2 cột: 1 cột target, 1 cột text_col chứa các câu văn độc nhất
-    # để tránh cột text_col bị nhận diện nhầm thành target do unique_count = 2
     long_texts = [
         f"Đây là câu văn bản thứ {i} dùng để kiểm tra tính năng nhận diện dữ liệu văn bản tự do TEXT role."
         for i in range(50)
@@ -180,6 +174,7 @@ def test_orchestrator_output_contract():
     res = run_profiling(df)
     assert isinstance(res, tuple) and len(res) == 2, "run_profiling phải trả về một tuple gồm 2 phần tử!"
     
+    from backend.app.core.profiler.target_analysis import TargetAnalysis
     profiles, suggested_target = res
     assert isinstance(profiles, list)
     assert all(isinstance(p, ColumnProfile) for p in profiles)

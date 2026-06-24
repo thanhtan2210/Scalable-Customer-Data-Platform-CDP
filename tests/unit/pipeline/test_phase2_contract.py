@@ -22,7 +22,7 @@ def test_phase2_contract_leakage_fixture_rejected():
     
     # 2. Run Profiling (Phase 1)
     profiles, suggested_target = run_profiling(df)
-    assert suggested_target == "churn_target"
+    assert suggested_target.recommended_target == "churn_target"
     
     # 3. Simulate user confirming DROP of leakage columns
     confirmed_profiles = []
@@ -36,32 +36,32 @@ def test_phase2_contract_leakage_fixture_rejected():
             p.inferred_role = DataRole.IGNORE
 
     with pytest.raises(PipelineBuilderError, match="No valid feature columns remaining after filtering"):
-        build_pipeline(confirmed_profiles, suggested_target)
+        build_pipeline(confirmed_profiles, suggested_target.recommended_target)
 
 def test_phase2_contract_leakage_fixture_accepted():
     df = pd.read_csv("tests/fixtures/target_leakage.csv")
     df = pd.concat([df]*10, ignore_index=True) # 100 rows
     
     profiles, suggested_target = run_profiling(df)
-    assert suggested_target == "churn_target"
+    assert suggested_target.recommended_target == "churn_target"
     
     # Simulate user KEEPING leakage columns (ignoring the flag)
     confirmed_profiles = profiles
     
     # Build Pipeline - Should succeed
-    pipeline = build_pipeline(confirmed_profiles, suggested_target)
+    pipeline = build_pipeline(confirmed_profiles, suggested_target.recommended_target)
     
     assert "preprocessor" in pipeline.named_steps
     assert "model" in pipeline.named_steps
     
     dataset_id = "test_dataset_leakage_keep"
-    model_uri, out_schema_data = run_automl(df, confirmed_profiles, suggested_target, dataset_id)
+    model_uri, out_schema_data = run_automl(df, confirmed_profiles, suggested_target.recommended_target, dataset_id)
     
     schema, metadata = out_schema_data
     assert isinstance(schema, pa.DataFrameSchema)
     assert isinstance(metadata, dict)
     
-    schema_path, metadata_path = save_schema(schema, metadata, dataset_id, suggested_target)
+    schema_path, metadata_path = save_schema(schema, metadata, dataset_id, suggested_target.recommended_target)
     
     assert model_uri.startswith("runs:/")
     assert metadata_path.endswith("metadata.json")
@@ -79,13 +79,13 @@ def test_phase2_contract_constant_fixture():
     df["valid_num"] = np.random.randn(len(df))
     
     profiles, suggested_target = run_profiling(df)
-    assert suggested_target == "target"
+    assert suggested_target.recommended_target == "target"
     
     dataset_id = "test_dataset_constant"
-    model_uri, out_schema_data = run_automl(df, profiles, suggested_target, dataset_id)
+    model_uri, out_schema_data = run_automl(df, profiles, suggested_target.recommended_target, dataset_id)
     
     schema, metadata = out_schema_data
-    schema_path, metadata_path = save_schema(schema, metadata, dataset_id, suggested_target)
+    schema_path, metadata_path = save_schema(schema, metadata, dataset_id, suggested_target.recommended_target)
     
     assert model_uri.startswith("runs:/")
-    assert suggested_target in schema_path
+    assert suggested_target.recommended_target in schema_path
