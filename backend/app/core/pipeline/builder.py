@@ -1,14 +1,18 @@
 from sklearn.compose import ColumnTransformer
 from sklearn.pipeline import Pipeline
 from sklearn.dummy import DummyClassifier
-from typing import List, Tuple
+from typing import List, Tuple, Optional
 
 from ..profiler.column_profile import ColumnProfile, DataRole
 from .transforms.registry import get_imputer, get_transformer
 
 from ..exceptions import PipelineBuilderError
 
-def build_pipeline(confirmed_profiles: List[ColumnProfile], target_col: str) -> Pipeline:
+def build_pipeline(
+    confirmed_profiles: List[ColumnProfile],
+    target_col: str,
+    auxiliary_cols: Optional[List[str]] = None
+) -> Pipeline:
     """Builds a scikit-learn Pipeline based on user-confirmed column profiles."""
     if not confirmed_profiles:
         raise ValueError("Cannot build pipeline: Input profiles list is empty.")
@@ -23,9 +27,12 @@ def build_pipeline(confirmed_profiles: List[ColumnProfile], target_col: str) -> 
             continue
         if p.name == target_col:
             continue
+        # Also exclude auxiliary columns from standard pipeline preprocessing if they are handled separately
+        if auxiliary_cols and p.name in auxiliary_cols:
+            continue
         features.append(p)
         
-    if not features:
+    if not features and not auxiliary_cols:
         raise PipelineBuilderError("No valid feature columns remaining after filtering. Check leakage flags and column roles before training.")
         
     # Group by (impute_strategy, transform_strategy)
@@ -57,6 +64,9 @@ def build_pipeline(confirmed_profiles: List[ColumnProfile], target_col: str) -> 
             step_name = f"pipe_{transform_strat}_{cols[0]}" if transform_strat == "tfidf" else f"pipe_{impute_strat}_{transform_strat}"
             transformers.append((step_name, pipe, cols))
             
+    if auxiliary_cols:
+        transformers.append(("auxiliary_passthrough", "passthrough", auxiliary_cols))
+        
     if not transformers:
         raise ValueError("Cannot build pipeline: No valid transformers resolved.")
         
@@ -67,3 +77,4 @@ def build_pipeline(confirmed_profiles: List[ColumnProfile], target_col: str) -> 
         ('preprocessor', preprocessor),
         ('model', DummyClassifier(strategy="prior"))
     ])
+
