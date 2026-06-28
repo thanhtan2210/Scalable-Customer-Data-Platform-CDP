@@ -3,7 +3,7 @@ import sys
 from sqlalchemy.engine import make_url
 
 # Tự động thêm thư mục gốc vào PYTHONPATH
-root_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+root_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 sys.path.insert(0, root_dir)
 
 def diagnose_url():
@@ -39,7 +39,7 @@ def diagnose_url():
         print(f"Port:     {res.port}")
         print(f"Database: {res.database}")
         print(f"------------------------------------------")
-        print("👉 Nếu thông tin trên đúng, hãy chạy: python scripts/validate_database.py")
+        print("👉 Nếu thông tin trên đúng, hãy chạy: python scripts/validation/validate_database.py")
 
     except Exception as e:
         print("❌ Lỗi Parse URL: Không thể phân tích cú pháp chuỗi này.")

@@ -46,7 +46,7 @@ if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 Write-Host "`nStep 4: Simulating A/B Notebook CI..." -ForegroundColor Yellow
 try {
     Write-Host "   - Running A/B Assignment..."
-    python scripts/ab_assign.py --input data/raw/cleaned_telco.csv --out reports/ab_assignment.csv --ratio 0.5
+    python scripts/ab_testing/ab_assign.py --input data/raw/cleaned_telco.csv --out reports/ab_assignment.csv --ratio 0.5
     
     # Create dummy exposures if missing (simulating DB export)
     $exposures_csv = "reports/ab_exposures_from_db.csv"
@@ -57,7 +57,7 @@ try {
     }
 
     Write-Host "   - Generating outcomes..."
-    python scripts/generate_outcomes_from_exposures_csv.py
+    python scripts/ab_testing/generate_outcomes_from_exposures_csv.py
     
     Write-Host "   - Testing Notebook Execution (nbconvert)..."
     # Run from root so relative paths like 'reports/...' work
