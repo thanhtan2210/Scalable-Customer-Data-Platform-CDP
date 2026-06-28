@@ -9,33 +9,51 @@ from ...db.session import get_db
 from ...api.schemas import TrainingRequest, JobResponse, JobStatusResponse
 from ...core.storage import storage
 from ...core.training.automl import run_automl
+from ...core.profiler.column_profile import ColumnProfile
+from ...core.profiler.target_analysis import CompositeTargetConfig
+from typing import Optional, List
 
 router = APIRouter(prefix="/jobs", tags=["jobs"])
 
-async def training_task(job_id: str, dataset_id: str, target: str, profiles_dict: list, db_session: Session):
+async def training_task(
+    job_id: str,
+    dataset_id: str,
+    target: str,
+    profiles_dict: list,
+    db_session: Session,
+    composite_config: Optional[CompositeTargetConfig] = None,  # Bug 1 fix
+):
     try:
         # 1. Load Data
         dataset = db_session.query(Dataset).filter(Dataset.id == dataset_id).first()
         content = storage.download_file(dataset.r2_path)
         df = pd.read_csv(io.BytesIO(content)) if dataset.filename.endswith('.csv') else pd.read_parquet(io.BytesIO(content))
-        
-        # 2. Run AutoML
-        # In a real scenario, convert profiles_dict back to ColumnProfile objects
-        best_trial = run_automl(df, profiles_dict, target)
-        
-        # 3. Update Job
+
+        # 2. Reconstruct ColumnProfile objects from dict
+        confirmed_profiles = [ColumnProfile(**p) for p in profiles_dict]
+
+        # 3. Run AutoML — now with composite_config to enable MTL path
+        model_uri, _schema_path = run_automl(
+            df,
+            confirmed_profiles,
+            target,
+            dataset_id=dataset_id,
+            composite_config=composite_config,
+        )
+
+        # 4. Update Job
         job = db_session.query(TrainingJob).filter(TrainingJob.id == job_id).first()
         job.status = "completed"
-        job.roc_auc = best_trial.value
-        job.model_uri = f"models:/GenericChurnModel/{best_trial.number}" # Simplified
+        job.model_uri = model_uri
         job.finished_at = datetime.utcnow()
-        
+
         dataset.status = "completed"
         db_session.commit()
     except Exception as e:
         job = db_session.query(TrainingJob).filter(TrainingJob.id == job_id).first()
-        job.status = "failed"
-        db_session.commit()
+        if job:
+            job.status = "failed"
+            db_session.commit()
         print(f"Training Failed for {job_id}: {str(e)}")
 
 @router.post("/datasets/{dataset_id}/train", response_model=JobResponse)
@@ -77,12 +95,13 @@ async def start_training(
 
     # Trigger Background Task
     background_tasks.add_task(
-        training_task, 
-        job_id, 
-        dataset_id, 
-        req.confirmed_target, 
+        training_task,
+        job_id,
+        dataset_id,
+        req.confirmed_target,
         [p.dict() for p in req.confirmed_profiles],
-        db
+        db,
+        req.composite_config,  # Bug 1 fix: pass CPI config through
     )
 
     return {

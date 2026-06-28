@@ -2,6 +2,7 @@ from pydantic import BaseModel, Field
 from typing import List, Optional, Dict, Any
 from datetime import datetime
 from ..core.profiler.column_profile import ColumnProfile
+from ..core.profiler.target_analysis import CompositeTargetConfig
 
 # --- DATASET SCHEMAS ---
 class DatasetResponse(BaseModel):
@@ -18,11 +19,13 @@ class ProfilingResponse(BaseModel):
     profiles: List[ColumnProfile]
     suggested_target: Optional[str]
     warnings: List[str]
+    composite_target: Optional[CompositeTargetConfig] = None  # Bug 2 fix: expose CPI config to client
 
 # --- TRAINING SCHEMAS ---
 class TrainingRequest(BaseModel):
     confirmed_target: str
     confirmed_profiles: List[ColumnProfile]
+    composite_config: Optional[CompositeTargetConfig] = None  # Bug 1 fix: flow CPI config into run_automl()
 
 class JobResponse(BaseModel):
     job_id: str

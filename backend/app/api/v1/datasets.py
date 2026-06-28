@@ -89,6 +89,7 @@ async def profile_dataset(dataset_id: str, db: Session = Depends(get_db)):
     return {
         "dataset_id": dataset_id,
         "profiles": profiles,
-        "suggested_target": suggested_target,
-        "warnings": [p.name for p in profiles if p.inferred_role == "drop"]
+        "suggested_target": suggested_target.recommended_target if hasattr(suggested_target, 'recommended_target') else str(suggested_target),
+        "warnings": [p.name for p in profiles if p.inferred_role == "drop"],
+        "composite_target": suggested_target.composite_target if hasattr(suggested_target, 'composite_target') else None
     }

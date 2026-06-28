@@ -43,3 +43,7 @@ scripts/hadoop/
 .env
 .coverage
 htmlcov/
+
+note.md
+PROJECT_CONTEXT.md
+composite_target_design.md
