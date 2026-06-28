@@ -4,7 +4,7 @@ import uuid
 import mlflow
 
 # Tự động thêm thư mục gốc vào PYTHONPATH
-root_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+root_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 sys.path.insert(0, root_dir)
 
 try:

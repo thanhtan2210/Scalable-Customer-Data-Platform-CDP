@@ -3,7 +3,7 @@ import sys
 import uuid
 
 # Tự động thêm thư mục gốc vào PYTHONPATH
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 
 try:
     from backend.app.core.storage import storage
