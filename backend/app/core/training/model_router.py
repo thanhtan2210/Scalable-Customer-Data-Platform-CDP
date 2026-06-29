@@ -22,7 +22,7 @@ def route_models(df: pd.DataFrame, confirmed_profiles: List[ColumnProfile]):
     models = []
     
     # 1. SPARSE / TEXT HEAVY -> LINEAR MODELS
-    if is_sparse_prone or n_rows < 500:
+    if is_sparse_prone or n_rows < 1000:
         models.append({
             "name": "LogisticRegression_Sparse",
             "class": LogisticRegression,

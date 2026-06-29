@@ -38,3 +38,4 @@ streamlit
 matplotlib
 seaborn
 openpyxl
+odfpy>=1.4.1

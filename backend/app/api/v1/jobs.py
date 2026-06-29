@@ -41,10 +41,26 @@ async def training_task(
             composite_config=composite_config,
         )
 
+        # Extract best_roc_auc from MLflow
+        import re
+        import mlflow
+        best_roc_auc = None
+        match = re.search(r"runs:/+([^/]+)", model_uri)
+        if match:
+            run_id = match.group(1)
+            try:
+                client = mlflow.tracking.MlflowClient()
+                run_data = client.get_run(run_id)
+                best_roc_auc = run_data.data.metrics.get("best_roc_auc")
+            except Exception as ex:
+                print(f"Failed to fetch metric from MLflow: {ex}")
+
         # 4. Update Job
         job = db_session.query(TrainingJob).filter(TrainingJob.id == job_id).first()
         job.status = "completed"
         job.model_uri = model_uri
+        if best_roc_auc is not None:
+            job.roc_auc = float(best_roc_auc)
         job.finished_at = datetime.utcnow()
 
         dataset.status = "completed"
