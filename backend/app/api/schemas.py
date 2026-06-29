@@ -2,7 +2,7 @@ from pydantic import BaseModel, Field
 from typing import List, Optional, Dict, Any
 from datetime import datetime
 from ..core.profiler.column_profile import ColumnProfile
-from ..core.profiler.target_analysis import CompositeTargetConfig
+from ..core.profiler.target_analysis import CompositeTargetConfig, SynthesisStrategy
 
 # --- DATASET SCHEMAS ---
 class DatasetResponse(BaseModel):
@@ -51,3 +51,13 @@ class PredictionResult(BaseModel):
 
 class PredictionResponse(BaseModel):
     predictions: List[PredictionResult]
+
+class ConfirmCompositeRequest(BaseModel):
+    confirmed: bool
+    selected_strategy: Optional[SynthesisStrategy] = None
+    selected_source_columns: Optional[List[str]] = None
+
+class ConfirmCompositeResponse(BaseModel):
+    dataset_id: str
+    composite_target: Optional[CompositeTargetConfig]
+    cpi_attached: bool
