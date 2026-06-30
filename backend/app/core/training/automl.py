@@ -18,6 +18,7 @@ from ..pipeline.builder import build_pipeline
 from ..pipeline.schema_gen import generate_schema
 from .model_router import route_models
 from .mtl_trainer import is_mtl_available, MTLChurnModel
+from .continual_trainer import ContinualMTLTrainer
 from ..config import MODEL_NAME
 
 def _hash_dataframe(df: pd.DataFrame) -> str:
@@ -29,7 +30,8 @@ def run_automl(
     confirmed_profiles: List[ColumnProfile],
     target_col: str,
     dataset_id: str,
-    composite_config: Optional[CompositeTargetConfig] = None
+    composite_config: Optional[CompositeTargetConfig] = None,
+    prior_model_uri: Optional[str] = None
 ) -> Tuple[str, str]:
     """
     Executes the full AutoML flow:
@@ -80,6 +82,65 @@ def run_automl(
         for ac in aux_cols:
             if ac not in feature_cols:
                 feature_cols.append(ac)
+
+    # Continual Learning MTL training path
+    if prior_model_uri and is_mtl_available():
+        cpi_col = composite_config.cpi_column_name if composite_config else "cpi_score"
+        if cpi_col not in df.columns:
+            if composite_config:
+                from ..profiler.target_synthesizer import _weighted_synthesis, _pca_synthesis
+                if composite_config.strategy == "PCA":
+                    _, cpi_series = _pca_synthesis(df, composite_config.source_columns, target_col)
+                    df[cpi_col] = cpi_series
+                elif composite_config.strategy == "WEIGHTED" and composite_config.weights:
+                    cpi_series = _weighted_synthesis(df, composite_config.weights)
+                    df[cpi_col] = cpi_series
+            else:
+                df[cpi_col] = 0.0
+
+        trainer = ContinualMTLTrainer()
+        model, final_pipeline, best_overall_score, optimal_threshold = trainer.train(
+            prior_model_uri=prior_model_uri,
+            dataset_id=dataset_id,
+            df_new=df,
+            feature_cols=feature_cols,
+            target_col=target_col,
+            cpi_col=cpi_col
+        )
+        
+        dataset_hash = _hash_dataframe(df)
+        
+        with mlflow.start_run() as run:
+            mlflow.set_tags({
+                "dataset_hash": dataset_hash,
+                "target_col": target_col,
+                "model_class": "MTLChurnModel",
+                "continual_learning": "True",
+                "prior_model_uri": prior_model_uri
+            })
+            mlflow.log_metric("best_roc_auc", best_overall_score)
+            mlflow.log_metric("optimal_threshold", optimal_threshold)
+            
+            with tempfile.TemporaryDirectory() as tmp_dir:
+                threshold_path = os.path.join(tmp_dir, "threshold.json")
+                with open(threshold_path, "w") as f:
+                    json.dump({"optimal_threshold": optimal_threshold, "metric": "f1", "cv_fold": "last"}, f)
+                mlflow.log_artifact(threshold_path)
+            
+            signature = infer_signature(df[feature_cols], final_pipeline.predict_proba(df[feature_cols]))
+            input_example = df[feature_cols].iloc[:5]
+            
+            mlflow.sklearn.log_model(
+                sk_model=final_pipeline,
+                artifact_path="model",
+                registered_model_name=MODEL_NAME,
+                signature=signature,
+                input_example=input_example
+            )
+            
+            model_uri = f"runs:/{run.info.run_id}/model"
+            
+        return model_uri, schema_path
 
     # MTL training path
     if composite_config and is_mtl_available():

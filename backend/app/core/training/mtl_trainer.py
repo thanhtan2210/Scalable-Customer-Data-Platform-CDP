@@ -7,7 +7,7 @@ try:
     import torch.optim as optim
     from torch.utils.data import TensorDataset, DataLoader
     _TORCH_AVAILABLE = True
-except ImportError:
+except (ImportError, OSError):
     _TORCH_AVAILABLE = False
     # Fallback placeholders for static code analysis
     torch = None
