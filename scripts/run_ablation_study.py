@@ -55,13 +55,16 @@ def main():
     # 3. Profile Task A to get feature configurations
     profiles_A, suggested_target_A = run_profiling(df_A)
     
-    # Overwrite/Force the primary target to be "Churn Value" in the profiles
+    # Overwrite/Force roles in the profiles to prevent leakage
+    exclude_leakage = ["CustomerID", "Churn Label", "Churn Score", "Churn Reason", "Contract"]
     for p in profiles_A:
         if p.name == target_col:
             p.inferred_role = DataRole.TARGET
             p.confidence_score = 1.0
         elif p.name == "cpi_score":
             p.inferred_role = DataRole.NUMERIC
+        elif p.name in exclude_leakage:
+            p.inferred_role = DataRole.IGNORE
 
     # Force composite configuration to use only Churn Score (preventing target leakage)
     composite_config_A = CompositeTargetConfig(
@@ -72,11 +75,6 @@ def main():
         requires_confirmation=False
     )
     print(f"Forced composite target configuration (excluding primary target to prevent leakage): {composite_config_A}")
-
-    # Prepare features list
-    feature_cols = [p.name for p in profiles_A if p.name != target_col and p.inferred_role not in ["ID", "IGNORE", "TARGET"]]
-    if "cpi_score" not in feature_cols:
-        feature_cols.append("cpi_score")
             
     # Split Task A/B into Train/Test subsets for evaluation
     df_A_train, df_A_test = train_test_split(df_A, test_size=0.2, stratify=df_A[target_col], random_state=42)
@@ -108,7 +106,7 @@ def main():
     model_type_str = type(actual_model_A).__name__
     print(f"Initial Model type actually used: {model_type_str}")
     
-    y_A_test_pred = pipeline_A.predict_proba(df_A_test[feature_cols])[:, 1]
+    y_A_test_pred = pipeline_A.predict_proba(df_A_test)[:, 1]
     auc_A_before = float(roc_auc_score(df_A_test[target_col], y_A_test_pred))
     print(f"AUC of Model A on Test A (Initial): {auc_A_before:.4f}")
 
@@ -167,11 +165,11 @@ def main():
                 is_fallback = True
             
             # Evaluate on Task A test set
-            y_A_after_pred = pipeline_B.predict_proba(df_A_test[feature_cols])[:, 1]
+            y_A_after_pred = pipeline_B.predict_proba(df_A_test)[:, 1]
             auc_A_after = float(roc_auc_score(df_A_test[target_col], y_A_after_pred))
             
             # Evaluate on Task B test set
-            y_B_pred = pipeline_B.predict_proba(df_B_test[feature_cols])[:, 1]
+            y_B_pred = pipeline_B.predict_proba(df_B_test)[:, 1]
             auc_B = float(roc_auc_score(df_B_test[target_col], y_B_pred))
             
             # Calculate forgetting rate
