@@ -33,6 +33,14 @@ def setup_db_override():
     yield
     app.dependency_overrides.clear()
 
+@pytest.fixture(autouse=True)
+def clean_db():
+    db = TestingSessionLocal()
+    db.query(Profile).delete()
+    db.query(Dataset).delete()
+    db.commit()
+    db.close()
+
 client = TestClient(app)
 API_KEY = "test-api-key"
 HEADERS = {"X-API-Key": API_KEY}
