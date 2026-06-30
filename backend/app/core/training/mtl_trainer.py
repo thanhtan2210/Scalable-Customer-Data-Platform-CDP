@@ -94,7 +94,8 @@ class MTLChurnModel:
             del self.__dict__['model_bytes']
 
     def fit(self, X: np.ndarray, y_binary: np.ndarray, y_cpi: np.ndarray,
-            epochs: int = 50, lr: float = 1e-3, batch_size: int = 64) -> "MTLChurnModel":
+            epochs: int = 50, lr: float = 1e-3, batch_size: int = 64,
+            random_state: int = 42) -> "MTLChurnModel":
         if not _TORCH_AVAILABLE:
             raise ImportError("PyTorch is required to train MTLChurnModel.")
 
@@ -107,7 +108,9 @@ class MTLChurnModel:
         self.model.train()
 
         dataset = TensorDataset(X_t, y_bin_t, y_cpi_t)
-        dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
+        g = torch.Generator()
+        g.manual_seed(random_state)
+        dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True, generator=g)
 
         optimizer = optim.Adam(self.model.parameters(), lr=lr)
         bce_loss_fn = nn.BCEWithLogitsLoss()

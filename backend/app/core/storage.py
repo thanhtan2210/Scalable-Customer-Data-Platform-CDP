@@ -85,4 +85,30 @@ class StorageClient:
             # Fallback for local testing (can be intercepted by a local mock endpoint if necessary)
             return f"http://localhost:8000/mock-presigned?path={path}"
 
+    def delete_prefix(self, prefix: str):
+        """Delete all objects with the specified prefix (simulating folder deletion)."""
+        prefix = prefix.lstrip("/")
+        if self.mode == "s3":
+            paginator = self.s3.get_paginator('list_objects_v2')
+            pages = paginator.paginate(Bucket=self.bucket, Prefix=prefix)
+            delete_keys = []
+            for page in pages:
+                if 'Contents' in page:
+                    for obj in page['Contents']:
+                        delete_keys.append({'Key': obj['Key']})
+            
+            for i in range(0, len(delete_keys), 1000):
+                self.s3.delete_objects(
+                    Bucket=self.bucket,
+                    Delete={'Objects': delete_keys[i:i+1000]}
+                )
+        else:
+            full_path = self.local_base_path / prefix
+            import shutil
+            if full_path.exists():
+                if full_path.is_dir():
+                    shutil.rmtree(full_path)
+                else:
+                    full_path.unlink()
+
 storage = StorageClient()

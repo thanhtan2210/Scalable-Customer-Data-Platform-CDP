@@ -31,7 +31,8 @@ def run_automl(
     target_col: str,
     dataset_id: str,
     composite_config: Optional[CompositeTargetConfig] = None,
-    prior_model_uri: Optional[str] = None
+    prior_model_uri: Optional[str] = None,
+    random_state: int = 42
 ) -> Tuple[str, str]:
     """
     Executes the full AutoML flow:
@@ -105,7 +106,8 @@ def run_automl(
             df_new=df,
             feature_cols=feature_cols,
             target_col=target_col,
-            cpi_col=cpi_col
+            cpi_col=cpi_col,
+            random_state=random_state
         )
         
         dataset_hash = _hash_dataframe(df)
@@ -168,12 +170,12 @@ def run_automl(
         # Train-test split
         X_train, X_val, y_train, y_val, y_cpi_train, y_cpi_val = train_test_split(
             X_full_trans, y_full_bin_encoded.values, y_full_cpi.values,
-            test_size=0.2, stratify=y_full_bin_encoded.values, random_state=42
+            test_size=0.2, stratify=y_full_bin_encoded.values, random_state=random_state
         )
         
         # Fit MTL model
         mtl_model = MTLChurnModel()
-        mtl_model.fit(X_train, y_train, y_cpi_train)
+        mtl_model.fit(X_train, y_train, y_cpi_train, random_state=random_state)
         
         # Calculate optimal threshold on validation set
         y_scores = mtl_model.predict_proba(X_val)[:, 1]
