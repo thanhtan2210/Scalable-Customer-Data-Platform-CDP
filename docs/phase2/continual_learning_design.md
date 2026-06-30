@@ -108,3 +108,44 @@ class TrainingRequest(BaseModel):
 *   **Diagonal Fisher Approximation**: Việc chỉ lưu trữ đường chéo Fisher Information Matrix ($O(n_{params})$) thay vì ma trận đầy đủ ($O(n_{params}^2)$) giúp tiết kiệm bộ nhớ và thời gian tính toán, nhưng sẽ bỏ qua tương quan chéo giữa các tham số, làm giảm độ chính xác của EWC penalty ở mức độ nhỏ.
 *   **R2 I/O Latency**: Quá trình tải và lưu Replay Buffer lên Cloudflare R2 qua mạng có thể tăng thời gian khởi chạy tác vụ huấn luyện (khoảng từ vài trăm miliseconds đến vài giây tùy thuộc kích thước buffer).
 *   **Bất biến Kiến trúc Mô hình (Fixed Model Architecture)**: Cơ chế EWC và Weight Mapping yêu cầu cấu trúc mạng nơ-ron (số lượng lớp, số lượng nơ-ron mỗi lớp, các tên trọng số) của mô hình cũ và mô hình mới phải hoàn toàn trùng khớp. Nếu kiến trúc mô hình thay đổi giữa các lần cập nhật, hệ thống sẽ tự động hủy tiến trình Continual Learning và quay về huấn luyện Standard MTL từ đầu.
+
+---
+
+## 7. Ablation Study Plan (Kế hoạch Đánh giá Đóng góp Thành phần)
+
+Để chứng minh EWC và Replay Buffer thực sự mang lại hiệu quả vượt trội trong việc ngăn chặn hiện tượng quên tri thức cũ (Catastrophic Forgetting), chúng ta thiết lập một kế hoạch thực nghiệm so sánh (Ablation Study) giữa các cấu hình khác nhau.
+
+### 7.1. Các kịch bản thí nghiệm (Thực hiện tuần tự)
+Thí nghiệm được thực hiện bằng cách huấn luyện mô hình ban đầu trên tập dữ liệu **A** (dataset cũ), sau đó cập nhật/huấn luyện trên tập dữ liệu **B** (dataset mới) theo các kịch bản sau:
+
+1.  **Baseline (Không EWC, Không Replay)**:
+    *   Huấn luyện trực tiếp trên tập dữ liệu mới B mà không dùng EWC penalty hay dữ liệu cũ từ Replay Buffer.
+    *   *Mục tiêu*: Chứng minh hiện tượng Catastrophic Forgetting xảy ra khi AUC của mô hình trên tập A bị suy giảm nghiêm trọng sau khi học tập B.
+2.  **Replay only (Chỉ dùng Replay Buffer, Không EWC)**:
+    *   Huấn luyện trên tập dữ liệu trộn ($X_{mixed}, y_{mixed}$) chứa 20% dữ liệu lấy mẫu phân tầng từ tập A, nhưng hàm loss không cộng thêm EWC penalty.
+    *   *Mục tiêu*: Đo lường đóng góp độc lập của việc giữ lại dữ liệu lịch sử đối với hiệu năng trên A và B.
+3.  **EWC only (Chỉ dùng EWC, Không Replay)**:
+    *   Huấn luyện trên tập dữ liệu mới B có cộng thêm EWC penalty từ mô hình cũ trên A, không trộn thêm dữ liệu cũ từ Replay Buffer.
+    *   *Mục tiêu*: Đo lường đóng góp độc lập của ràng buộc tham số dựa trên Fisher Information Matrix đối với hiệu năng trên A và B.
+4.  **Full (EWC + Replay)**:
+    *   Kịch bản đầy đủ: Huấn luyện trên tập dữ liệu trộn kết hợp EWC penalty.
+    *   *Mục tiêu*: Chứng minh tính cộng hưởng tối ưu khi cả hai phương pháp hoạt động đồng thời.
+
+### 7.2. Các chỉ số đo lường (Metrics)
+Đối với mỗi kịch bản, hệ thống sẽ tính toán và so sánh các chỉ số sau:
+*   $AUC_{A\_before}$: Diện tích dưới đường cong ROC của mô hình gốc (chỉ huấn luyện trên A) khi kiểm thử trên tập A.
+*   $AUC_{A\_after}$: Diện tích dưới đường cong ROC của mô hình sau khi cập nhật dữ liệu B khi kiểm thử trên tập A.
+*   $AUC_{B}$: Diện tích dưới đường cong ROC của mô hình mới trên tập kiểm thử B.
+*   $Forgetting\ Rate$ (Tốc độ suy giảm hiệu năng trên tác vụ cũ):
+    $$\text{Forgetting Rate} = \frac{AUC_{A\_before} - AUC_{A\_after}}{AUC_{A\_before}}$$
+
+### 7.3. Bảng so sánh kết quả mẫu
+Kết quả thực nghiệm sẽ được ghi nhận vào bảng so sánh dưới đây (đóng vai trò là trung tâm báo cáo đánh giá của dự án):
+
+| Kịch bản | Sử dụng EWC | Sử dụng Replay | $AUC_{A\_before}$ | $AUC_{A\_after}$ | $AUC_{B}$ | Forgetting Rate (%) |
+| :--- | :---: | :---: | :---: | :---: | :---: | :---: |
+| **Baseline** | ❌ | ❌ | 0.85 | 0.55 | 0.84 | 35.29% |
+| **Replay only**| ❌ |  | 0.85 | 0.78 | 0.82 | 8.24% |
+| **EWC only** |  | ❌ | 0.85 | 0.76 | 0.81 | 10.59% |
+| **Full (EWC+Replay)**|  |  | 0.85 | **0.83** | 0.83 | **2.35%** |
+
