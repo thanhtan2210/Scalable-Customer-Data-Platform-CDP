@@ -96,7 +96,7 @@ class ReplayBuffer:
         df.to_parquet(pq_buffer, index=False)
         storage.upload_file(pq_buffer.getvalue(), path)
 
-    def update(self, dataset_id: str, df_new: pd.DataFrame, target_col: str):
+    def update(self, dataset_id: str, df_new: pd.DataFrame, target_col: str, random_state: int = 42):
         df_old = self.load_from_r2(dataset_id)
         if df_old is not None:
             df_combined = pd.concat([df_old, df_new], ignore_index=True)
@@ -115,19 +115,19 @@ class ReplayBuffer:
                 sub_size = max(1, int(round(pct * self.max_size)))
                 n_to_sample = min(len(df_subset), sub_size)
                 if n_to_sample > 0:
-                    sampled_dfs.append(df_subset.sample(n=n_to_sample, random_state=42))
+                    sampled_dfs.append(df_subset.sample(n=n_to_sample, random_state=random_state))
             
             df_sampled = pd.concat(sampled_dfs, ignore_index=True)
             if len(df_sampled) > self.max_size:
-                df_sampled = df_sampled.sample(n=self.max_size, random_state=42)
+                df_sampled = df_sampled.sample(n=self.max_size, random_state=random_state)
             elif len(df_sampled) < self.max_size:
                 remainder = df_combined[~df_combined.index.isin(df_sampled.index)]
                 needed = self.max_size - len(df_sampled)
                 if needed > 0 and len(remainder) > 0:
-                    fill = remainder.sample(n=min(len(remainder), needed), random_state=42)
+                    fill = remainder.sample(n=min(len(remainder), needed), random_state=random_state)
                     df_sampled = pd.concat([df_sampled, fill], ignore_index=True)
         else:
-            df_sampled = df_combined.sample(n=self.max_size, random_state=42)
+            df_sampled = df_combined.sample(n=self.max_size, random_state=random_state)
 
         self.save_to_r2(dataset_id, df_sampled)
 
@@ -153,15 +153,18 @@ class ContinualMTLTrainer:
         cpi_col: str,
         epochs: int = 50,
         lr: float = 1e-3,
-        batch_size: int = 64
+        batch_size: int = 64,
+        random_state: int = 42
     ) -> Tuple[nn.Module, object, float, float]:
         """
-        Run Continual MTL training loop.
+        Run Continual MTL training loop with train/val splitting and loss curves logging.
         """
         if not _TORCH_AVAILABLE:
             raise ImportError("PyTorch is required for ContinualMTLTrainer.")
 
         import mlflow
+        from sklearn.model_selection import train_test_split
+
         # 1. Load prior pipeline from MLflow
         pipeline = mlflow.sklearn.load_model(prior_model_uri)
         preprocessor = pipeline.named_steps['preprocessor']
@@ -173,16 +176,44 @@ class ContinualMTLTrainer:
         for name, param in model.named_parameters():
             param_old[name] = param.data.clone()
 
-        # 3. Load Replay Buffer
+        # 3. Split df_new into train and validation subsets for convergence tracking
+        try:
+            df_train_sub, df_val_sub = train_test_split(
+                df_new, test_size=0.2, stratify=df_new[target_col], random_state=random_state
+            )
+        except Exception:
+            df_train_sub, df_val_sub = train_test_split(
+                df_new, test_size=0.2, random_state=random_state
+            )
+
+        # Prepare validation data tensors
+        X_val_raw = df_val_sub[feature_cols]
+        y_val_bin = df_val_sub[target_col]
+        y_val_cpi = df_val_sub[cpi_col]
+
+        X_val_trans = preprocessor.transform(X_val_raw)
+        if hasattr(X_val_trans, "toarray"):
+            X_val_trans = X_val_trans.toarray()
+
+        if not pd.api.types.is_numeric_dtype(y_val_bin):
+            unique_classes = sorted(y_val_bin.dropna().unique())
+            pos_label = unique_classes[1] if len(unique_classes) > 1 else unique_classes[0]
+            y_val_bin_encoded = (y_val_bin == pos_label).astype(int)
+        else:
+            y_val_bin_encoded = y_val_bin
+
+        X_val_t = torch.tensor(X_val_trans, dtype=torch.float32)
+        y_val_bin_t = torch.tensor(y_val_bin_encoded.values, dtype=torch.float32).unsqueeze(1)
+        y_val_cpi_t = torch.tensor(y_val_cpi.values, dtype=torch.float32).unsqueeze(1)
+
+        # 4. Load Replay Buffer
         df_replay = self.replay_buffer.load_from_r2(dataset_id)
         
-        # 4. Trộn dữ liệu phân tầng
+        # 5. Mix stratified replay data with new train subset
         if df_replay is not None and len(df_replay) > 0:
-            # We want to mix based on mixing_ratio
-            n_replay = int(len(df_new) * self.mixing_ratio / (1 - self.mixing_ratio))
+            n_replay = int(len(df_train_sub) * self.mixing_ratio / (1 - self.mixing_ratio))
             n_replay = min(len(df_replay), max(10, n_replay))
             
-            # Stratified sample from replay
             if target_col in df_replay.columns:
                 counts = df_replay[target_col].value_counts(normalize=True)
                 sampled_dfs = []
@@ -191,27 +222,25 @@ class ContinualMTLTrainer:
                     sub_size = max(1, int(round(pct * n_replay)))
                     n_to_sample = min(len(df_subset), sub_size)
                     if n_to_sample > 0:
-                        sampled_dfs.append(df_subset.sample(n=n_to_sample, random_state=42))
+                        sampled_dfs.append(df_subset.sample(n=n_to_sample, random_state=random_state))
                 df_replay_sampled = pd.concat(sampled_dfs, ignore_index=True)
             else:
-                df_replay_sampled = df_replay.sample(n=n_replay, random_state=42)
+                df_replay_sampled = df_replay.sample(n=n_replay, random_state=random_state)
 
-            df_mixed = pd.concat([df_new, df_replay_sampled], ignore_index=True)
+            df_mixed = pd.concat([df_train_sub, df_replay_sampled], ignore_index=True)
         else:
-            df_mixed = df_new
-            df_replay_sampled = df_new.sample(n=min(len(df_new), 200), random_state=42) # fallback for Fisher calculation
+            df_mixed = df_train_sub
+            df_replay_sampled = df_train_sub.sample(n=min(len(df_train_sub), 200), random_state=random_state)
 
-        # 5. Preprocess mixed data
+        # Preprocess mixed data
         X_mixed_raw = df_mixed[feature_cols]
         y_mixed_bin = df_mixed[target_col]
         y_mixed_cpi = df_mixed[cpi_col]
 
-        # Use preprocessor (which is already fitted) to transform data
         X_mixed_trans = preprocessor.transform(X_mixed_raw)
         if hasattr(X_mixed_trans, "toarray"):
             X_mixed_trans = X_mixed_trans.toarray()
 
-        # Target encoding
         if not pd.api.types.is_numeric_dtype(y_mixed_bin):
             unique_classes = sorted(y_mixed_bin.dropna().unique())
             pos_label = unique_classes[1] if len(unique_classes) > 1 else unique_classes[0]
@@ -219,7 +248,7 @@ class ContinualMTLTrainer:
         else:
             y_mixed_bin_encoded = y_mixed_bin
 
-        # 6. Calculate Fisher Matrix using Replay Data as proxy
+        # 6. Calculate Fisher Matrix
         X_replay_raw = df_replay_sampled[feature_cols]
         y_replay_bin = df_replay_sampled[target_col]
         y_replay_cpi = df_replay_sampled[cpi_col]
@@ -249,13 +278,20 @@ class ContinualMTLTrainer:
         y_cpi_t = torch.tensor(y_mixed_cpi.values, dtype=torch.float32).unsqueeze(1)
 
         dataset = TensorDataset(X_t, y_bin_t, y_cpi_t)
-        dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
+        
+        # Seed generator for DataLoader shuffle
+        g = torch.Generator()
+        g.manual_seed(random_state)
+        dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True, generator=g)
 
         optimizer = optim.Adam(model.parameters(), lr=lr)
         bce_loss_fn = nn.BCEWithLogitsLoss()
         mse_loss_fn = nn.MSELoss()
 
         for epoch in range(epochs):
+            total_train_loss = 0.0
+            batches_count = 0
+            
             for batch_x, batch_y_bin, batch_y_cpi in dataloader:
                 if len(batch_x) <= 1:
                     continue
@@ -275,8 +311,30 @@ class ContinualMTLTrainer:
                 loss.backward()
                 optimizer.step()
 
-        # Update Replay Buffer with new data
-        self.replay_buffer.update(dataset_id, df_new, target_col)
+                total_train_loss += loss.item()
+                batches_count += 1
+
+            epoch_train_loss = total_train_loss / max(1, batches_count)
+
+            # Evaluate validation loss
+            model.eval()
+            with torch.no_grad():
+                logits_val_a, out_val_b = model(X_val_t)
+                val_loss_a = bce_loss_fn(logits_val_a, y_val_bin_t)
+                val_loss_b = mse_loss_fn(out_val_b, y_val_cpi_t)
+                val_ewc_loss = 0.0
+                for name, param in model.named_parameters():
+                    if name in fisher:
+                        val_ewc_loss += (fisher[name] * (param - param_old[name]) ** 2).sum()
+                val_loss = 0.7 * val_loss_a + 0.3 * val_loss_b + (self.lambda_ewc / 2.0) * val_ewc_loss
+            model.train()
+
+            # Learning curve text printout
+            if epoch == 0 or epoch == epochs - 1 or (epoch + 1) % 10 == 0:
+                print(f"Epoch {epoch + 1:2d}: train_loss={epoch_train_loss:.4f}, val_loss={val_loss.item():.4f}")
+
+        # Update Replay Buffer with new data using random_state
+        self.replay_buffer.update(dataset_id, df_new, target_col, random_state=random_state)
 
         # Assign updated model back into prior_mtl_model
         prior_mtl_model.model = model
@@ -285,7 +343,6 @@ class ContinualMTLTrainer:
         final_pipeline = pipeline
         
         # Calculate optimal threshold on validation set of df_new
-        # Get threshold using mtl_model.predict_proba
         X_new_raw = df_new[feature_cols]
         y_new_bin = df_new[target_col]
         
