@@ -5,11 +5,12 @@ import uuid
 from sqlalchemy.orm import Session
 from ...db.models import Dataset, Profile, TrainingJob
 from ...db.session import get_db # Assuming session manager exists
-from ...api.schemas import DatasetResponse, ProfilingResponse, TrainingRequest, JobResponse, ConfirmCompositeRequest, ConfirmCompositeResponse
+from ...api.schemas import DatasetResponse, ProfilingResponse, TrainingRequest, JobResponse, ConfirmCompositeRequest, ConfirmCompositeResponse, SelectSheetRequest
 from ...core.storage import storage
 from ...core.profiler.orchestrator import run_profiling
 from ...core.profiler.target_analysis import TargetAnalysis
 from ...core.training.automl import run_automl
+from ...core.ingestion.parsers import parse_file
 
 router = APIRouter(prefix="/datasets", tags=["datasets"])
 
@@ -19,38 +20,74 @@ async def upload_dataset(
     file: UploadFile = File(...),
     db: Session = Depends(get_db)
 ):
-    # 1. Validation
-    if not (file.filename.endswith('.csv') or file.filename.endswith('.parquet')):
-        raise HTTPException(status_code=400, detail="Only CSV or Parquet files allowed")
-    
     content = await file.read()
     if len(content) > 50 * 1024 * 1024:
         raise HTTPException(status_code=400, detail="File too large (>50MB)")
     
     try:
-        if file.filename.endswith('.csv'):
-            df = pd.read_csv(io.BytesIO(content), nrows=100)
-        else:
-            df = pd.read_parquet(io.BytesIO(content))
-    except Exception:
-         raise HTTPException(status_code=400, detail="Could not parse file")
+        result = parse_file(content=content, filename=file.filename)
+    except Exception as e:
+         raise HTTPException(status_code=400, detail=str(e))
 
+    dataset_id = str(uuid.uuid4())
+    user_id = "default_user" # Placeholder for auth
+
+    requires_sheet_selection = (result.df is None and result.sheets is not None and len(result.sheets) > 1)
+
+    if requires_sheet_selection:
+        # Store raw Excel file to R2
+        r2_path = f"raw/{user_id}/{dataset_id}/{file.filename}"
+        storage.upload_file(content, r2_path)
+
+        new_dataset = Dataset(
+            id=dataset_id,
+            user_id=user_id,
+            filename=file.filename,
+            r2_path=r2_path,
+            row_count=None,
+            col_count=None,
+            status="uploaded"
+        )
+        db.add(new_dataset)
+        db.commit()
+
+        return {
+            "dataset_id": dataset_id,
+            "row_count": None,
+            "col_count": None,
+            "status": "uploaded",
+            "detected_format": result.detected_format,
+            "sheets": result.sheets,
+            "requires_sheet_selection": True
+        }
+
+    # If df has data:
+    df = result.df
     if len(df.columns) < 2:
         raise HTTPException(status_code=400, detail="Dataset must have at least 2 columns")
 
-    # 2. Store to R2
-    dataset_id = str(uuid.uuid4())
-    user_id = "default_user" # Placeholder for auth
-    r2_path = f"raw/{user_id}/{dataset_id}/{file.filename}"
-    storage.upload_file(content, r2_path)
+    # Save to R2 - keep CSV/Parquet as raw, convert other formats to Parquet for downstream compatibility
+    if result.detected_format == "csv":
+        upload_content = content
+        filename_to_save = file.filename
+    elif result.detected_format == "parquet":
+        upload_content = content
+        filename_to_save = file.filename
+    else:
+        pq_buffer = io.BytesIO()
+        df.to_parquet(pq_buffer, index=False)
+        upload_content = pq_buffer.getvalue()
+        filename_to_save = f"{file.filename.split('.')[0]}.parquet"
 
-    # 3. DB Metadata
+    r2_path = f"raw/{user_id}/{dataset_id}/{filename_to_save}"
+    storage.upload_file(upload_content, r2_path)
+
     new_dataset = Dataset(
         id=dataset_id,
         user_id=user_id,
-        filename=file.filename,
+        filename=filename_to_save,
         r2_path=r2_path,
-        row_count=0, # Will be updated after full read if needed
+        row_count=len(df),
         col_count=len(df.columns),
         status="uploaded"
     )
@@ -59,9 +96,12 @@ async def upload_dataset(
     
     return {
         "dataset_id": dataset_id,
-        "row_count": 0,
+        "row_count": len(df),
         "col_count": len(df.columns),
-        "status": "uploaded"
+        "status": "uploaded",
+        "detected_format": result.detected_format,
+        "sheets": None,
+        "requires_sheet_selection": False
     }
 
 @router.post("/{dataset_id}/profile", response_model=ProfilingResponse)
@@ -72,7 +112,8 @@ async def profile_dataset(dataset_id: str, db: Session = Depends(get_db)):
     
     # 1. Read from R2
     content = storage.download_file(dataset.r2_path)
-    df = pd.read_csv(io.BytesIO(content)) if dataset.filename.endswith('.csv') else pd.read_parquet(io.BytesIO(content))
+    result = parse_file(content=content, filename=dataset.filename)
+    df = result.df
     
     # 2. Run Profiling
     profiles, suggested_target = run_profiling(df)
@@ -237,4 +278,63 @@ async def confirm_composite(
         "dataset_id": dataset_id,
         "composite_target": composite_config,
         "cpi_attached": True
+    }
+
+@router.post("/{dataset_id}/select-sheet", response_model=DatasetResponse)
+async def select_sheet(
+    dataset_id: str,
+    req: SelectSheetRequest,
+    db: Session = Depends(get_db)
+):
+    dataset = db.query(Dataset).filter(Dataset.id == dataset_id).first()
+    if not dataset:
+        raise HTTPException(status_code=404, detail="Dataset not found")
+        
+    # Download raw file from R2
+    try:
+        content = storage.download_file(dataset.r2_path)
+    except Exception as e:
+        raise HTTPException(status_code=404, detail=f"File not found in storage: {str(e)}")
+        
+    # Parse file with selected sheet_name
+    try:
+        result = parse_file(content=content, filename=dataset.filename, sheet_name=req.sheet_name)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+        
+    df = result.df
+    if df is None:
+        raise HTTPException(status_code=400, detail="Sheet not found or could not be parsed")
+        
+    if len(df.columns) < 2:
+        raise HTTPException(status_code=400, detail="Dataset must have at least 2 columns")
+        
+    # Convert data to Parquet
+    pq_buffer = io.BytesIO()
+    df.to_parquet(pq_buffer, index=False)
+    pq_content = pq_buffer.getvalue()
+    
+    # Save the selected parquet sheet to R2
+    user_id = dataset.user_id
+    parquet_filename = f"{dataset.filename.split('.')[0]}.parquet"
+    new_r2_path = f"raw/{user_id}/{dataset_id}/{parquet_filename}"
+    
+    storage.upload_file(pq_content, new_r2_path)
+    
+    # Update DB
+    dataset.r2_path = new_r2_path
+    dataset.filename = parquet_filename
+    dataset.status = "uploaded"
+    dataset.row_count = len(df)
+    dataset.col_count = len(df.columns)
+    db.commit()
+    
+    return {
+        "dataset_id": dataset_id,
+        "row_count": len(df),
+        "col_count": len(df.columns),
+        "status": "uploaded",
+        "detected_format": result.detected_format,
+        "sheets": None,
+        "requires_sheet_selection": False
     }
