@@ -7,12 +7,18 @@ from ..core.profiler.target_analysis import CompositeTargetConfig, SynthesisStra
 # --- DATASET SCHEMAS ---
 class DatasetResponse(BaseModel):
     dataset_id: str
-    row_count: int
-    col_count: int
+    row_count: Optional[int] = None
+    col_count: Optional[int] = None
     status: str
+    detected_format: str
+    sheets: Optional[List[str]] = None
+    requires_sheet_selection: bool = False
 
     class Config:
         from_attributes = True
+
+class SelectSheetRequest(BaseModel):
+    sheet_name: str
 
 class ProfilingResponse(BaseModel):
     dataset_id: str
