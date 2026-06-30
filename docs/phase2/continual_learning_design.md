@@ -113,6 +113,9 @@ class TrainingRequest(BaseModel):
 
 ## 7. Ablation Study Plan (Kế hoạch Đánh giá Đóng góp Thành phần)
 
+> [!NOTE]
+> Kế hoạch và kết quả thực nghiệm Ablation Study trong mục này được thiết kế và định dạng chuyên biệt để phục vụ làm **Phần đánh giá hiệu năng (Evaluation Section) cho báo cáo học thuật (Academic Report)** của dự án.
+
 Để chứng minh EWC và Replay Buffer thực sự mang lại hiệu quả vượt trội trong việc ngăn chặn hiện tượng quên tri thức cũ (Catastrophic Forgetting), chúng ta thiết lập một kế hoạch thực nghiệm so sánh (Ablation Study) giữa các cấu hình khác nhau.
 
 ### 7.1. Các kịch bản thí nghiệm (Thực hiện tuần tự)
