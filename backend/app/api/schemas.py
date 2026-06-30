@@ -32,6 +32,7 @@ class TrainingRequest(BaseModel):
     confirmed_target: str
     confirmed_profiles: List[ColumnProfile]
     composite_config: Optional[CompositeTargetConfig] = None  # Bug 1 fix: flow CPI config into run_automl()
+    prior_model_uri: Optional[str] = None
 
 class JobResponse(BaseModel):
     job_id: str

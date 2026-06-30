@@ -22,6 +22,7 @@ async def training_task(
     profiles_dict: list,
     db_session: Session,
     composite_config: Optional[CompositeTargetConfig] = None,  # Bug 1 fix
+    prior_model_uri: Optional[str] = None,
 ):
     try:
         # 1. Load Data
@@ -39,6 +40,7 @@ async def training_task(
             target,
             dataset_id=dataset_id,
             composite_config=composite_config,
+            prior_model_uri=prior_model_uri,
         )
 
         # Extract best_roc_auc from MLflow
@@ -118,6 +120,7 @@ async def start_training(
         [p.dict() for p in req.confirmed_profiles],
         db,
         req.composite_config,  # Bug 1 fix: pass CPI config through
+        req.prior_model_uri,
     )
 
     return {
