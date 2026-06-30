@@ -132,4 +132,10 @@ async def get_job_status(job_id: str, db: Session = Depends(get_db)):
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
     
-    return job
+    return {
+        "job_id": job.id,
+        "status": job.status,
+        "roc_auc": job.roc_auc,
+        "model_uri": job.model_uri,
+        "finished_at": job.finished_at
+    }
