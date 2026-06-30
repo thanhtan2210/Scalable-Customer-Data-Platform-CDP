@@ -15,8 +15,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 
 from backend.app.core.profiler.orchestrator import run_profiling
 from backend.app.core.profiler.column_profile import ColumnProfile, DataRole
-from backend.app.core.profiler.target_analysis import CompositeTargetConfig, SynthesisStrategy
-from backend.app.core.profiler.target_synthesizer import _pca_synthesis
+from backend.app.core.profiler.target_analysis import CompositeTargetConfig, SynthesisStrategy, ColumnWeight
 from backend.app.core.training.automl import run_automl
 from backend.app.core.training.continual_trainer import ReplayBuffer
 
@@ -37,21 +36,21 @@ def main():
     df = pd.read_csv(csv_path)
     print(f"Loaded dataset: {len(df)} rows, {len(df.columns)} columns.")
 
-    # Target column is "Churn Value", composite auxiliary churn columns are Churn Value and Churn Score
+    # Target column is "Churn Value"
     target_col = "Churn Value"
     
-    # Pre-synthesize CPI score on full dataset for consistency
-    variance, cpi_series = _pca_synthesis(df, ["Churn Value", "Churn Score"], target_col)
-    df["cpi_score"] = cpi_series
-    print(f"Pre-synthesized cpi_score via PCA. Variance explained: {variance:.4f}")
+    # Pre-synthesize CPI score on full dataset for consistency without target leakage (excluding Churn Value)
+    # Normalizing Churn Score to [0.0, 1.0]
+    df["cpi_score"] = (df["Churn Score"] - df["Churn Score"].min()) / (df["Churn Score"].max() - df["Churn Score"].min())
+    print("Pre-synthesized cpi_score via Churn Score normalization (No target leakage).")
 
-    # 2. Split dataset into A (Old Task) and B (New Task)
-    # Shuffle full dataset first to ensure class balance in both splits A and B
-    df = df.sample(frac=1.0, random_state=42).reset_index(drop=True)
-    df_A = df.iloc[:3500].copy()
-    df_B = df.iloc[3500:].copy()
+    # 2. Split dataset into A (Old Task) and B (New Task) based on Contract type (Real Domain Shift)
+    # Task A: Month-to-month contracts (3875 rows, high churn rates)
+    # Task B: Long-term contracts One year & Two year (3157 rows, low churn rates, different characteristics)
+    df_A = df[df["Contract"] == "Month-to-month"].copy()
+    df_B = df[df["Contract"].isin(["One year", "Two year"])].copy()
     
-    print(f"Split data: Task A = {len(df_A)} rows, Task B = {len(df_B)} rows.")
+    print(f"Split data by Contract: Task A (Month-to-month) = {len(df_A)} rows, Task B (Long-term) = {len(df_B)} rows.")
 
     # 3. Profile Task A to get feature configurations
     profiles_A, suggested_target_A = run_profiling(df_A)
@@ -64,15 +63,15 @@ def main():
         elif p.name == "cpi_score":
             p.inferred_role = DataRole.NUMERIC
 
-    # Force composite configuration to use Churn Value & Churn Score
+    # Force composite configuration to use only Churn Score (preventing target leakage)
     composite_config_A = CompositeTargetConfig(
-        strategy=SynthesisStrategy.PCA,
-        source_columns=["Churn Value", "Churn Score"],
-        cpi_variance_explained=variance,
-        weights=None,
+        strategy=SynthesisStrategy.WEIGHTED,
+        source_columns=["Churn Score"],
+        cpi_variance_explained=None,
+        weights=[ColumnWeight(name="Churn Score", weight=1.0, normalize_method="minmax")],
         requires_confirmation=False
     )
-    print(f"Forced composite target configuration: {composite_config_A}")
+    print(f"Forced composite target configuration (excluding primary target to prevent leakage): {composite_config_A}")
 
     # Prepare features list
     feature_cols = [p.name for p in profiles_A if p.name != target_col and p.inferred_role not in ["ID", "IGNORE", "TARGET"]]
@@ -105,6 +104,10 @@ def main():
 
     # Measure AUC of Model A on Test set A
     pipeline_A = mlflow.sklearn.load_model(model_uri_A)
+    actual_model_A = pipeline_A.steps[-1][1]
+    model_type_str = type(actual_model_A).__name__
+    print(f"Initial Model type actually used: {model_type_str}")
+    
     y_A_test_pred = pipeline_A.predict_proba(df_A_test[feature_cols])[:, 1]
     auc_A_before = float(roc_auc_score(df_A_test[target_col], y_A_test_pred))
     print(f"AUC of Model A on Test A (Initial): {auc_A_before:.4f}")
@@ -123,6 +126,7 @@ def main():
     }
 
     results = []
+    is_fallback = False
 
     for name, config in scenarios.items():
         print(f"\n--- Running Scenario: {name} ---")
@@ -155,6 +159,12 @@ def main():
             
             # Load fine-tuned pipeline
             pipeline_B = mlflow.sklearn.load_model(model_uri_B)
+            actual_model_B = pipeline_B.steps[-1][1]
+            curr_model_type = type(actual_model_B).__name__
+            print(f"Model type actually used: {curr_model_type}")
+            
+            if "LogisticRegression" in curr_model_type or "Pipeline" in curr_model_type:
+                is_fallback = True
             
             # Evaluate on Task A test set
             y_A_after_pred = pipeline_B.predict_proba(df_A_test[feature_cols])[:, 1]
@@ -174,7 +184,8 @@ def main():
                 "AUC_A_before": auc_A_before,
                 "AUC_A_after": auc_A_after,
                 "AUC_B": auc_B,
-                "Forgetting_Rate": forgetting_rate
+                "Forgetting_Rate": forgetting_rate,
+                "Model_Type": curr_model_type
             })
             
             print(f"Results for {name}:")
@@ -196,6 +207,10 @@ def main():
     print("\n" + "="*80)
     print("EVALUATION SECTION: ABLATION STUDY COMPARISON TABLE")
     print("="*80)
+    
+    if is_fallback:
+        print("\n[NOTE] Ablation Study chay tren Standard AutoML fallback, KHONG phai MTL PyTorch, do moi truong Windows chan torch DLL")
+        
     print("\n| Scenario | Use EWC | Use Replay | $AUC_{A\\_before}$ | $AUC_{A\\_after}$ | $AUC_{B}$ | Forgetting Rate (%) |")
     print("| :--- | :---: | :---: | :---: | :---: | :---: | :---: |")
     for r in results:
