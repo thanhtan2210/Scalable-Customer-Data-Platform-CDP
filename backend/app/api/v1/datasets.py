@@ -1,16 +1,18 @@
 from fastapi import APIRouter, UploadFile, File, HTTPException, Depends, BackgroundTasks
+from typing import List, Optional, Dict, Any
 import pandas as pd
 import io
 import uuid
 from sqlalchemy.orm import Session
 from ...db.models import Dataset, Profile, TrainingJob
 from ...db.session import get_db # Assuming session manager exists
-from ...api.schemas import DatasetResponse, ProfilingResponse, TrainingRequest, JobResponse, ConfirmCompositeRequest, ConfirmCompositeResponse, SelectSheetRequest
+from ...api.schemas import DatasetResponse, ProfilingResponse, TrainingRequest, JobResponse, ConfirmCompositeRequest, ConfirmCompositeResponse, SelectSheetRequest, ReEvaluateLeakageRequest
 from ...core.storage import storage
 from ...core.profiler.orchestrator import run_profiling
 from ...core.profiler.target_analysis import TargetAnalysis
 from ...core.training.automl import run_automl
 from ...core.ingestion.parsers import parse_file
+from ...core.profiler.column_profile import ColumnProfile
 
 router = APIRouter(prefix="/datasets", tags=["datasets"])
 
@@ -348,3 +350,89 @@ async def select_sheet(
         "sheets": None,
         "requires_sheet_selection": False
     }
+
+@router.post("/{dataset_id}/re-evaluate-leakage", response_model=List[ColumnProfile])
+async def re_evaluate_leakage(
+    dataset_id: str,
+    req: ReEvaluateLeakageRequest,
+    db: Session = Depends(get_db)
+):
+    dataset = db.query(Dataset).filter(Dataset.id == dataset_id).first()
+    if not dataset:
+        raise HTTPException(status_code=404, detail="Dataset not found")
+        
+    profile = db.query(Profile).filter(Profile.dataset_id == dataset_id).first()
+    if not profile:
+        raise HTTPException(status_code=404, detail="Profile not found")
+        
+    # 1. Load Data from R2
+    content = storage.download_file(dataset.r2_path)
+    result = parse_file(content=content, filename=dataset.filename)
+    df = result.df
+    
+    if df is None:
+        raise HTTPException(status_code=400, detail="Failed to parse dataset dataframe")
+        
+    if req.confirmed_target not in df.columns:
+        raise HTTPException(status_code=400, detail=f"Confirmed target '{req.confirmed_target}' not found in dataset columns")
+        
+    # 2. Reset and update roles
+    from ...core.profiler.column_profile import DataRole, ColumnProfile
+    from ...core.profiler.orchestrator import check_leakage, ROLE_RECIPES
+    
+    profiles_dict = profile.profiles_json or []
+    
+    for p in profiles_dict:
+        col_name = p["name"]
+        if col_name == req.confirmed_target:
+            p["inferred_role"] = DataRole.TARGET.value if hasattr(DataRole.TARGET, "value") else str(DataRole.TARGET)
+            p["confidence_score"] = 1.0
+            p["potential_leakage"] = False
+            p["leakage_score"] = None
+        else:
+            role_val = p["inferred_role"].value if hasattr(p["inferred_role"], "value") else str(p["inferred_role"])
+            if role_val == "TARGET" or role_val == DataRole.TARGET:
+                # Revert old target to a sensible default role (Numeric or Categorical) based on data type
+                is_numeric = p["inferred_dtype"] in ("float64", "int64", "float32", "int32")
+                p["inferred_role"] = DataRole.NUMERIC.value if is_numeric else DataRole.CATEGORICAL.value
+                p["confidence_score"] = 0.8
+            p["potential_leakage"] = False
+            p["leakage_score"] = None
+            
+    # 3. Re-evaluate leakage
+    check_leakage(req.confirmed_target, profiles_dict, df)
+    
+    # 4. Update recipes & reconstruct ColumnProfile objects
+    updated_profiles = []
+    for p in profiles_dict:
+        role = p["inferred_role"]
+        try:
+            role_enum = DataRole(role)
+        except ValueError:
+            role_enum = DataRole.IGNORE
+        recipe = ROLE_RECIPES.get(role_enum, ROLE_RECIPES[DataRole.IGNORE])
+        if recipe:
+            p["impute_strategy"] = recipe["impute"]
+            p["transform_strategy"] = recipe["transform"]
+            
+        # Pydantic safety
+        p.setdefault("regex_pattern", None)
+        p.setdefault("mean_length", None)
+        p.setdefault("leakage_score", None)
+        p.setdefault("potential_leakage", False)
+        
+        updated_profiles.append(ColumnProfile(**p))
+        
+    # 5. Save back to DB
+    profile.profiles_json = [up.dict() for up in updated_profiles]
+    
+    try:
+        target_analysis = TargetAnalysis.parse_raw(profile.suggested_target)
+        target_analysis.recommended_target = req.confirmed_target
+        profile.suggested_target = target_analysis.json()
+    except Exception:
+        pass
+        
+    db.commit()
+    
+    return updated_profiles

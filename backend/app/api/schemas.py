@@ -72,3 +72,23 @@ class ConfirmCompositeResponse(BaseModel):
     dataset_id: str
     composite_target: Optional[CompositeTargetConfig]
     cpi_attached: bool
+
+class ReEvaluateLeakageRequest(BaseModel):
+    confirmed_target: str
+
+class BatchPredictionRequest(BaseModel):
+    dataset_id: str
+    file_path: str
+
+class BatchPredictionResult(BaseModel):
+    record_id: str
+    probability: float
+    risk_level: str
+
+class BatchPredictionResponse(BaseModel):
+    total_records: int
+    high_risk: int
+    medium_risk: int
+    low_risk: int
+    predictions: List[BatchPredictionResult]
+    threshold_used: float
