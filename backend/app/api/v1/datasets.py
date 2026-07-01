@@ -6,8 +6,7 @@ import uuid
 from sqlalchemy.orm import Session
 from ...db.models import Dataset, Profile, TrainingJob
 from ...db.session import get_db # Assuming session manager exists
-from fastapi.encoders import jsonable_encoder
-from ...api.schemas import DatasetResponse, ProfilingResponse, TrainingRequest, JobResponse, ConfirmCompositeRequest, ConfirmCompositeResponse, SelectSheetRequest, ReEvaluateLeakageRequest, ReEvaluateLeakageResponse
+from ...api.schemas import DatasetResponse, ProfilingResponse, TrainingRequest, JobResponse, ConfirmCompositeRequest, ConfirmCompositeResponse, SelectSheetRequest, ReEvaluateLeakageRequest
 from ...core.storage import storage
 from ...core.profiler.orchestrator import run_profiling
 from ...core.profiler.target_analysis import TargetAnalysis
@@ -352,7 +351,7 @@ async def select_sheet(
         "requires_sheet_selection": False
     }
 
-@router.post("/{dataset_id}/re-evaluate-leakage", response_model=ReEvaluateLeakageResponse)
+@router.post("/{dataset_id}/re-evaluate-leakage", response_model=List[ColumnProfile])
 async def re_evaluate_leakage(
     dataset_id: str,
     req: ReEvaluateLeakageRequest,
@@ -381,8 +380,7 @@ async def re_evaluate_leakage(
     from ...core.profiler.column_profile import DataRole, ColumnProfile
     from ...core.profiler.orchestrator import check_leakage, ROLE_RECIPES
     
-    import copy
-    profiles_dict = copy.deepcopy(profile.profiles_json or [])
+    profiles_dict = profile.profiles_json or []
     
     for p in profiles_dict:
         col_name = p["name"]
@@ -426,51 +424,15 @@ async def re_evaluate_leakage(
         updated_profiles.append(ColumnProfile(**p))
         
     # 5. Save back to DB
-    db_profile = db.query(Profile).filter(
-        Profile.dataset_id == dataset_id
-    ).first()
-
-    if db_profile:
-        from sqlalchemy.orm.attributes import flag_modified
-        db_profile.profiles_json = jsonable_encoder(updated_profiles)
-        db_profile.suggested_target = req.confirmed_target
-        flag_modified(db_profile, "profiles_json")
-    else:
-        db_profile = Profile(
-            dataset_id=dataset_id,
-            profiles_json=jsonable_encoder(updated_profiles),
-            suggested_target=req.confirmed_target
-        )
-        db.add(db_profile)
-        from sqlalchemy.orm.attributes import flag_modified
-        flag_modified(db_profile, "profiles_json")
+    profile.profiles_json = [up.dict() for up in updated_profiles]
     
     try:
-        if profile.suggested_target and profile.suggested_target.startswith("{"):
-            target_analysis = TargetAnalysis.parse_raw(profile.suggested_target)
-            target_analysis.recommended_target = req.confirmed_target
-            profile.suggested_target = target_analysis.json()
+        target_analysis = TargetAnalysis.parse_raw(profile.suggested_target)
+        target_analysis.recommended_target = req.confirmed_target
+        profile.suggested_target = target_analysis.json()
     except Exception:
         pass
         
     db.commit()
-        
-    return {
-        "profiles_updated_in_db": True,
-        "profiles": updated_profiles
-    }
-
-@router.get("/{dataset_id}", response_model=DatasetResponse)
-async def get_dataset(dataset_id: str, db: Session = Depends(get_db)):
-    dataset = db.query(Dataset).filter(Dataset.id == dataset_id).first()
-    if not dataset:
-        raise HTTPException(status_code=404, detail="Dataset not found")
-        
-    return {
-        "dataset_id": dataset.id,
-        "row_count": dataset.row_count or 0,
-        "col_count": dataset.col_count or 0,
-        "status": dataset.status,
-        "r2_path": dataset.r2_path,
-        "detected_format": dataset.filename.split('.')[-1] if dataset.filename else "csv"
-    }
+    
+    return updated_profiles

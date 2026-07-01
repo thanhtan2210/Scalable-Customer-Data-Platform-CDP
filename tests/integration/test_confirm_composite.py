@@ -13,7 +13,7 @@ from backend.app.db.session import get_db
 from backend.app.core.profiler.target_analysis import TargetAnalysis, CompositeTargetConfig, SynthesisStrategy
 
 # Mock DB setup
-SQLALCHEMY_DATABASE_URL = "sqlite:///./test_confirm.db"
+SQLALCHEMY_DATABASE_URL = "sqlite:///./tests/test_confirm.db"
 engine = create_engine(SQLALCHEMY_DATABASE_URL, connect_args={"check_same_thread": False})
 TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
