@@ -268,7 +268,7 @@ PredictionResult:   record_id, churn_probability, risk_level  # "High"/"Medium"/
 - [x] `composite_config` flow qua REST API — `jobs.py` — **[Bug 1 fixed]**
 - [x] `ColumnProfile` reconstruct từ dict — `jobs.py` — **[Bug 1 fixed]**
 - [x] job.roc_auc được cập nhật từ MLflow sau training — **[GAP fixed]**
-- [x] Ablation Study — reproducible SEED=42, 3 lần chạy khớp, citation verified
+- [x] Ablation Study — reproducible SEED=42, citation verified, committed
 
 ### Phase 3 — MLOps / Serving & BI
 
@@ -320,10 +320,24 @@ PredictionResult:   record_id, churn_probability, risk_level  # "High"/"Medium"/
 
 ---
 
-## Mục 9: Task tiếp theo (theo ưu tiên)
+## Mục 9: Task tiếp theo (theo thứ tự ưu tiên)
 
-1. Fix profiling endpoint (tuple mismatch) — Phase 3
-2. Thêm training trigger endpoint — Phase 3
-3. Chạy multi-seed ablation (42, 123, 456) — báo cáo
-4. Frontend Column Review UI fix TypeScript — Phase 4
-5. Training status UI — Phase 4
+### 1. Fix profiling endpoint — tuple mismatch
+*   **File**: `backend/app/api/v1/datasets.py`
+*   **Dependency**: không có
+
+### 2. Thêm training trigger endpoint
+*   **File**: `backend/app/api/v1/jobs.py`
+*   **Dependency**: task 1 xong trước
+
+### 3. Fix Column Review UI TypeScript errors
+*   **File**: `frontend/src/pages/ColumnReview.jsx`
+*   **Dependency**: task 1+2 xong (cần API đúng)
+
+### 4. Training status UI
+*   **File**: `frontend/src/pages/Jobs.jsx`
+*   **Dependency**: task 2
+
+### 5. Multi-seed ablation (42, 123, 456)
+*   **File**: `scripts/run_ablation_study.py`
+*   **Dependency**: không có, chạy song song được
