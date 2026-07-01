@@ -77,6 +77,10 @@ class ConfirmCompositeResponse(BaseModel):
 class ReEvaluateLeakageRequest(BaseModel):
     confirmed_target: str
 
+class ReEvaluateLeakageResponse(BaseModel):
+    profiles_updated_in_db: bool
+    profiles: List[ColumnProfile]
+
 class BatchPredictionRequest(BaseModel):
     dataset_id: str
     file_path: str
@@ -93,3 +97,4 @@ class BatchPredictionResponse(BaseModel):
     low_risk: int
     predictions: List[BatchPredictionResult]
     threshold_used: float
+    threshold_source: str

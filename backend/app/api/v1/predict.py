@@ -45,6 +45,14 @@ async def predict(req: PredictionRequest, db: Session = Depends(get_db)):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Inference failed: {str(e)}")
 
+def classify_risk(prob: float, threshold: float) -> str:
+    if prob >= min(threshold * 1.5, 0.85):
+        return "High"
+    elif prob >= threshold:
+        return "Medium"
+    else:
+        return "Low"
+
 @router.post("/batch", response_model=BatchPredictionResponse)
 async def predict_batch(req: BatchPredictionRequest, db: Session = Depends(get_db)):
     # 1. Get Best Model for Dataset
@@ -78,24 +86,41 @@ async def predict_batch(req: BatchPredictionRequest, db: Session = Depends(get_d
     if df is None or df.empty:
          raise HTTPException(status_code=400, detail="Empty or invalid dataset dataframe")
 
-    # 4. Load optimal_threshold from MLflow artifact or DB fallback
+    # 4. Load optimal_threshold from MLflow artifact or DB fallback (Fix 2)
     import re
     import json
     import mlflow
-    optimal_threshold = 0.5
+    optimal_threshold = None
+    threshold_source = "optimal"
+    
     match = re.search(r"runs:/+([^/]+)", job.model_uri)
     if match:
         run_id = match.group(1)
         try:
             client = mlflow.tracking.MlflowClient()
+            run_data = client.get_run(run_id)
+            optimal_threshold = run_data.data.metrics.get("optimal_threshold")
+        except Exception:
+            pass
+
+    if optimal_threshold is None:
+        if job.optimal_threshold is not None:
+            optimal_threshold = job.optimal_threshold
+
+    if optimal_threshold is None and match:
+        try:
+            client = mlflow.tracking.MlflowClient()
             local_path = client.download_artifacts(run_id, "threshold.json")
             with open(local_path, "r") as f:
                 threshold_data = json.load(f)
-                optimal_threshold = float(threshold_data.get("optimal_threshold", 0.5))
+                optimal_threshold = float(threshold_data.get("optimal_threshold"))
         except Exception as ex:
             print(f"Failed to load optimal_threshold from MLflow artifact: {ex}")
-            if job.optimal_threshold is not None:
-                optimal_threshold = job.optimal_threshold
+
+    if optimal_threshold is None:
+        optimal_threshold = 0.5
+        threshold_source = "fallback_default"
+        print("Warning: optimal_threshold not found. Using default fallback threshold of 0.5.")
 
     # 5. Get identifier column if exists
     id_col = None
@@ -132,14 +157,12 @@ async def predict_batch(req: BatchPredictionRequest, db: Session = Depends(get_d
     low_count = 0
 
     for i, prob in enumerate(probabilities):
-        if prob >= optimal_threshold:
-            risk = "High"
+        risk = classify_risk(float(prob), optimal_threshold)
+        if risk == "High":
             high_count += 1
-        elif prob >= optimal_threshold * 0.5:
-            risk = "Medium"
+        elif risk == "Medium":
             medium_count += 1
         else:
-            risk = "Low"
             low_count += 1
             
         record_id = str(df.iloc[i][id_col]) if id_col else str(i)
@@ -155,7 +178,8 @@ async def predict_batch(req: BatchPredictionRequest, db: Session = Depends(get_d
         "medium_risk": medium_count,
         "low_risk": low_count,
         "predictions": results,
-        "threshold_used": optimal_threshold
+        "threshold_used": optimal_threshold,
+        "threshold_source": threshold_source
     }
 
 @router.get("/datasets/{dataset_id}/feature-importance")
