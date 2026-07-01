@@ -2,7 +2,7 @@ from pydantic import BaseModel, Field
 from typing import List, Optional, Dict, Any
 from datetime import datetime
 from ..core.profiler.column_profile import ColumnProfile
-from ..core.profiler.target_analysis import CompositeTargetConfig, SynthesisStrategy
+from ..core.profiler.target_analysis import CompositeTargetConfig, SynthesisStrategy, CandidateTarget, ChurnColumnGroupItem
 
 # --- DATASET SCHEMAS ---
 class DatasetResponse(BaseModel):
@@ -24,8 +24,11 @@ class ProfilingResponse(BaseModel):
     dataset_id: str
     profiles: List[ColumnProfile]
     suggested_target: Optional[str]
+    candidate_targets: List[CandidateTarget]
+    composite_target: Optional[CompositeTargetConfig] = None
+    churn_column_group: List[ChurnColumnGroupItem]
+    leakage_suspects: List[str]
     warnings: List[str]
-    composite_target: Optional[CompositeTargetConfig] = None  # Bug 2 fix: expose CPI config to client
 
 # --- TRAINING SCHEMAS ---
 class TrainingRequest(BaseModel):
@@ -44,6 +47,7 @@ class JobStatusResponse(BaseModel):
     status: str
     roc_auc: Optional[float]
     model_uri: Optional[str]
+    optimal_threshold: Optional[float] = None
     finished_at: Optional[datetime]
 
 # --- PREDICTION SCHEMAS ---

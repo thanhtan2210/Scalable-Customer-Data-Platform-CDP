@@ -43,7 +43,10 @@ class TrainingJob(Base):
     status = Column(String, default="training") # training, completed, failed
     model_uri = Column(String, nullable=True)
     roc_auc = Column(Float, nullable=True)
+    optimal_threshold = Column(Float, nullable=True)
     target_column = Column(String)
+    prior_model_uri = Column(String, nullable=True)
+    error_message = Column(String, nullable=True)
     started_at = Column(DateTime, default=datetime.utcnow)
     finished_at = Column(DateTime, nullable=True)
     
