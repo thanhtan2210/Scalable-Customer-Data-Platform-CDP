@@ -157,3 +157,61 @@ async def predict_batch(req: BatchPredictionRequest, db: Session = Depends(get_d
         "predictions": results,
         "threshold_used": optimal_threshold
     }
+
+@router.get("/datasets/{dataset_id}/feature-importance")
+async def get_feature_importance(dataset_id: str, db: Session = Depends(get_db)):
+    # 1. Get Best Model for Dataset
+    job = db.query(TrainingJob).filter(
+        TrainingJob.dataset_id == dataset_id, 
+        TrainingJob.status == "completed"
+    ).order_by(TrainingJob.roc_auc.desc()).first()
+    
+    if not job or not job.model_uri:
+        raise HTTPException(status_code=404, detail="No completed training job found for this dataset")
+
+    # 2. Load Model
+    try:
+        model = model_cache.get_model(job.model_uri)
+    except Exception as e:
+         raise HTTPException(status_code=500, detail=f"Failed to load model: {str(e)}")
+
+    # 3. Try to extract feature importances
+    estimator = None
+    if hasattr(model, "steps"):
+        estimator = model.steps[-1][1]
+    else:
+        estimator = model
+        
+    importances = None
+    feature_names = []
+    
+    if hasattr(estimator, "feature_importances_"):
+        importances = estimator.feature_importances_.tolist()
+        if hasattr(model, "feature_names_in_"):
+            feature_names = list(model.feature_names_in_)
+        elif hasattr(estimator, "feature_names_in_"):
+            feature_names = list(estimator.feature_names_in_)
+        else:
+            feature_names = [f"feature_{i}" for i in range(len(importances))]
+            
+    elif hasattr(estimator, "coef_"):
+        import numpy as np
+        coef = estimator.coef_
+        if len(coef.shape) > 1:
+            coef = coef[0]
+        importances = np.abs(coef).tolist()
+        if hasattr(model, "feature_names_in_"):
+            feature_names = list(model.feature_names_in_)
+        else:
+            feature_names = [f"feature_{i}" for i in range(len(importances))]
+            
+    if importances is None:
+        return {"feature_importances": []}
+        
+    sorted_importances = sorted(
+        [{"feature": f, "importance": imp} for f, imp in zip(feature_names, importances)],
+        key=lambda x: x["importance"],
+        reverse=True
+    )
+    
+    return {"feature_importances": sorted_importances}

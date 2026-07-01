@@ -436,3 +436,18 @@ async def re_evaluate_leakage(
     db.commit()
     
     return updated_profiles
+
+@router.get("/{dataset_id}", response_model=DatasetResponse)
+async def get_dataset(dataset_id: str, db: Session = Depends(get_db)):
+    dataset = db.query(Dataset).filter(Dataset.id == dataset_id).first()
+    if not dataset:
+        raise HTTPException(status_code=404, detail="Dataset not found")
+        
+    return {
+        "dataset_id": dataset.id,
+        "row_count": dataset.row_count or 0,
+        "col_count": dataset.col_count or 0,
+        "status": dataset.status,
+        "r2_path": dataset.r2_path,
+        "detected_format": dataset.filename.split('.')[-1] if dataset.filename else "csv"
+    }

@@ -13,6 +13,7 @@ class DatasetResponse(BaseModel):
     detected_format: str
     sheets: Optional[List[str]] = None
     requires_sheet_selection: bool = False
+    r2_path: Optional[str] = None
 
     class Config:
         from_attributes = True
