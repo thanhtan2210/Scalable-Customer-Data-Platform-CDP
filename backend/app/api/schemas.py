@@ -13,7 +13,6 @@ class DatasetResponse(BaseModel):
     detected_format: str
     sheets: Optional[List[str]] = None
     requires_sheet_selection: bool = False
-    r2_path: Optional[str] = None
 
     class Config:
         from_attributes = True
@@ -76,10 +75,6 @@ class ConfirmCompositeResponse(BaseModel):
 
 class ReEvaluateLeakageRequest(BaseModel):
     confirmed_target: str
-
-class ReEvaluateLeakageResponse(BaseModel):
-    profiles_updated_in_db: bool
-    profiles: List[ColumnProfile]
 
 class BatchPredictionRequest(BaseModel):
     dataset_id: str

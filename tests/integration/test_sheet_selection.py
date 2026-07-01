@@ -12,7 +12,7 @@ from backend.app.db.models import Base, Dataset, Profile
 from backend.app.db.session import get_db
 
 # Mock DB setup
-SQLALCHEMY_DATABASE_URL = "sqlite:///./test_sheet.db"
+SQLALCHEMY_DATABASE_URL = "sqlite:///./tests/test_sheet.db"
 engine = create_engine(SQLALCHEMY_DATABASE_URL, connect_args={"check_same_thread": False})
 TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
