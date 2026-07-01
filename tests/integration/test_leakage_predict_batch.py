@@ -7,6 +7,7 @@ import json
 from backend.app.main import app
 from backend.app.db.models import Base, Dataset, Profile, TrainingJob
 from backend.app.db.session import get_db
+from backend.app.core.profiler.column_profile import ColumnProfile
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
@@ -58,7 +59,6 @@ def test_re_evaluate_leakage(mock_storage):
         status="uploaded"
     )
     
-    # Simple profiles_json, churn has status=TARGET
     profiles = [
         {
             "name": "feat1",
@@ -201,7 +201,6 @@ def test_predict_batch(mock_mlflow_client, mock_model_cache, mock_storage):
     assert data["low_risk"] == 1
     assert data["threshold_used"] == 0.35
     
-    # Check individual risk mappings
     preds = data["predictions"]
     c1_pred = next(p for p in preds if p["record_id"] == "c1")
     c2_pred = next(p for p in preds if p["record_id"] == "c2")
@@ -210,3 +209,165 @@ def test_predict_batch(mock_mlflow_client, mock_model_cache, mock_storage):
     assert c1_pred["risk_level"] == "Low"
     assert c2_pred["risk_level"] == "High"
     assert c3_pred["risk_level"] == "Medium"
+
+@patch("backend.app.api.v1.datasets.run_profiling")
+@patch("backend.app.api.v1.datasets.storage")
+def test_profile_endpoint_success(mock_storage, mock_run_profiling):
+    db = TestingSessionLocal()
+    
+    dataset_id = "test-ds-profile"
+    new_dataset = Dataset(
+        id=dataset_id,
+        user_id="default_user",
+        filename="test.csv",
+        r2_path=f"raw/default_user/{dataset_id}/test.csv",
+        status="uploaded"
+    )
+    db.add(new_dataset)
+    db.commit()
+    
+    df = pd.DataFrame({"feat1": [1.0, 2.0, 3.0], "churn": [0, 1, 0]})
+    mock_storage.download_file.return_value = df.to_csv(index=False).encode("utf-8")
+    
+    mock_profiles = [
+        ColumnProfile(
+            name="feat1",
+            inferred_dtype="float64",
+            inferred_role="NUMERIC",
+            confidence_score=1.0,
+            null_pct=0.0,
+            unique_count=3,
+            entropy=1.0,
+            transform_strategy="standard",
+            impute_strategy="median"
+        ),
+        ColumnProfile(
+            name="churn",
+            inferred_dtype="int64",
+            inferred_role="TARGET",
+            confidence_score=1.0,
+            null_pct=0.0,
+            unique_count=2,
+            entropy=0.5,
+            transform_strategy="passthrough",
+            impute_strategy="drop"
+        )
+    ]
+    
+    from backend.app.core.profiler.target_analysis import TargetAnalysis, CandidateTarget, TargetSignals, TargetRole
+    mock_target_analysis = TargetAnalysis(
+        recommended_target="churn",
+        candidate_targets=[
+            CandidateTarget(
+                name="churn",
+                rank=1,
+                score=0.9,
+                signals=TargetSignals(
+                    is_binary=True,
+                    entropy=0.5,
+                    entropy_score=0.9,
+                    keyword_match=True,
+                    position_bonus=0.0
+                ),
+                suggested_role=TargetRole.TARGET
+            )
+        ],
+        churn_column_group=[],
+        recommended_auxiliary=[],
+        leakage_suspects=["leak_col"],
+        composite_target=None
+    )
+    
+    mock_run_profiling.return_value = (mock_profiles, mock_target_analysis)
+    
+    resp = client.post(f"/api/v1/datasets/{dataset_id}/profile", headers=HEADERS)
+    assert resp.status_code == 200
+    data = resp.json()
+    
+    assert data["dataset_id"] == dataset_id
+    assert data["suggested_target"] == "churn"
+    assert len(data["profiles"]) == 2
+    assert "leak_col" in data["leakage_suspects"]
+
+def test_start_training_missing_dataset():
+    payload = {
+        "confirmed_target": "churn",
+        "confirmed_profiles": [],
+        "composite_config": None,
+        "prior_model_uri": None
+    }
+    response = client.post("/api/v1/jobs/datasets/non-existent-ds/train", json=payload, headers=HEADERS)
+    assert response.status_code == 404
+    assert "Dataset not found" in response.json()["detail"]
+
+@patch("backend.app.api.v1.jobs.storage")
+def test_start_training_missing_target_column(mock_storage):
+    db = TestingSessionLocal()
+    dataset_id = "test-ds-no-col"
+    new_dataset = Dataset(
+        id=dataset_id,
+        user_id="default_user",
+        filename="test.csv",
+        r2_path=f"raw/default_user/{dataset_id}/test.csv",
+        status="uploaded"
+    )
+    db.add(new_dataset)
+    db.commit()
+    
+    df = pd.DataFrame({"feat1": [1, 2, 3]})
+    mock_storage.download_file.return_value = df.to_csv(index=False).encode("utf-8")
+    
+    payload = {
+        "confirmed_target": "non_existent_target",
+        "confirmed_profiles": [],
+        "composite_config": None,
+        "prior_model_uri": None
+    }
+    response = client.post(f"/api/v1/jobs/datasets/{dataset_id}/train", json=payload, headers=HEADERS)
+    assert response.status_code == 400
+    assert "Confirmed target 'non_existent_target' not found" in response.json()["detail"]
+
+def test_re_evaluate_leakage_missing_dataset():
+    payload = {"confirmed_target": "churn"}
+    response = client.post("/api/v1/datasets/non-existent-ds/re-evaluate-leakage", json=payload, headers=HEADERS)
+    assert response.status_code == 404
+    assert "Dataset not found" in response.json()["detail"]
+
+def test_re_evaluate_leakage_missing_profile():
+    db = TestingSessionLocal()
+    dataset_id = "test-ds-no-prof"
+    new_dataset = Dataset(
+        id=dataset_id,
+        user_id="default_user",
+        filename="test.csv",
+        r2_path=f"raw/default_user/{dataset_id}/test.csv",
+        status="uploaded"
+    )
+    db.add(new_dataset)
+    db.commit()
+    
+    payload = {"confirmed_target": "churn"}
+    response = client.post(f"/api/v1/datasets/{dataset_id}/re-evaluate-leakage", json=payload, headers=HEADERS)
+    assert response.status_code == 404
+    assert "Profile not found" in response.json()["detail"]
+
+def test_predict_batch_no_completed_job():
+    db = TestingSessionLocal()
+    dataset_id = "test-ds-no-job"
+    new_dataset = Dataset(
+        id=dataset_id,
+        user_id="default_user",
+        filename="test.csv",
+        r2_path=f"raw/default_user/{dataset_id}/test.csv",
+        status="uploaded"
+    )
+    db.add(new_dataset)
+    db.commit()
+    
+    payload = {
+        "dataset_id": dataset_id,
+        "file_path": "processed/test.parquet"
+    }
+    response = client.post("/api/v1/predict/batch", json=payload, headers=HEADERS)
+    assert response.status_code == 404
+    assert "No completed training job found" in response.json()["detail"]
