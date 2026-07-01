@@ -272,15 +272,17 @@ PredictionResult:   record_id, churn_probability, risk_level  # "High"/"Medium"/
 
 ### Phase 3 — MLOps / Serving & BI
 
-- [x] `POST /predict` — `api/v1/predict.py`
+- [x] `POST /predict` (Single record inference) — `api/v1/predict.py`
 - [x] `ModelCache` — `serving/model_loader.py`
 - [x] A/B testing service — `serving/ab_service.py`
 - [x] Streamlit dashboard — `analytics/streamlit_app.py` (partial)
 - [ ] Model drift monitoring — chưa có
-- [ ] Automated retraining trigger — chưa có
+- [x] Automated retraining trigger / endpoint — `POST /jobs/datasets/{id}/train` (queued state & background worker)
 - [x] `POST /datasets/{id}/confirm-composite` — **[GAP fixed]**
 - [x] Universal file ingestion (Excel/JSON/TSV) — `parsers.py` **[Phase 3 check]**
 - [x] `POST /datasets/{id}/select-sheet` — Xử lý chọn sheet cho Excel đa sheet
+- [x] `POST /datasets/{id}/re-evaluate-leakage` — Re-evaluate target leakage
+- [x] `POST /predict/batch` — Batch inference utilizing MLflow optimal threshold & dynamic risk levels
 
 ### Phase 4 — UI / Frontend
 
@@ -322,22 +324,18 @@ PredictionResult:   record_id, churn_probability, risk_level  # "High"/"Medium"/
 
 ## Mục 9: Task tiếp theo (theo thứ tự ưu tiên)
 
-### 1. Fix profiling endpoint — tuple mismatch
-*   **File**: `backend/app/api/v1/datasets.py`
-*   **Dependency**: không có
-
-### 2. Thêm training trigger endpoint
-*   **File**: `backend/app/api/v1/jobs.py`
-*   **Dependency**: task 1 xong trước
-
-### 3. Fix Column Review UI TypeScript errors
+### 1. Fix Column Review UI TypeScript errors — Phase 4 Frontend
 *   **File**: `frontend/src/pages/ColumnReview.jsx`
-*   **Dependency**: task 1+2 xong (cần API đúng)
+*   **Dependency**: API profile & leakage endpoints done.
 
-### 4. Training status UI
+### 2. Training status UI — Phase 4 Frontend
 *   **File**: `frontend/src/pages/Jobs.jsx`
-*   **Dependency**: task 2
+*   **Dependency**: Jobs trigger & status APIs done.
 
-### 5. Multi-seed ablation (42, 123, 456)
-*   **File**: `scripts/run_ablation_study.py`
-*   **Dependency**: không có, chạy song song được
+### 3. Streamlit dashboard completion — Phase 3 BI
+*   **File**: `analytics/streamlit_app.py`
+*   **Dependency**: Model explainability & cohort analysis implementation.
+
+### 4. Model drift monitoring — Phase 3 MLOps
+*   **File**: `backend/app/core/serving/drift_detector.py`
+*   **Dependency**: None.
