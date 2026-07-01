@@ -116,25 +116,35 @@ async def profile_dataset(dataset_id: str, db: Session = Depends(get_db)):
     df = result.df
     
     # 2. Run Profiling
-    profiles, suggested_target = run_profiling(df)
+    profiles, target_analysis = run_profiling(df)
     
     # 4. Save to DB
     new_profile = Profile(
         dataset_id=dataset_id,
         profiles_json=[p.dict() for p in profiles],
-        suggested_target=suggested_target.json() if hasattr(suggested_target, 'json') else str(suggested_target)
+        suggested_target=target_analysis.json() if hasattr(target_analysis, 'json') else str(target_analysis)
     )
     db.merge(new_profile)
     dataset.status = "profiled"
     db.commit()
     
-    return {
-        "dataset_id": dataset_id,
-        "profiles": profiles,
-        "suggested_target": suggested_target.recommended_target if hasattr(suggested_target, 'recommended_target') else str(suggested_target),
-        "warnings": [p.name for p in profiles if p.inferred_role == "drop"],
-        "composite_target": suggested_target.composite_target if hasattr(suggested_target, 'composite_target') else None
-    }
+    warnings = []
+    for p in profiles:
+        role_str = p.inferred_role.value if hasattr(p.inferred_role, "value") else str(p.inferred_role)
+        if role_str in ["ID", "IGNORE"]:
+            reason = "Identifier column" if role_str == "ID" else "Ignored column"
+            warnings.append(f"Column '{p.name}' dropped: {reason}")
+            
+    return ProfilingResponse(
+        dataset_id=dataset_id,
+        profiles=profiles,
+        suggested_target=target_analysis.recommended_target,
+        candidate_targets=target_analysis.candidate_targets,
+        composite_target=target_analysis.composite_target,
+        churn_column_group=target_analysis.churn_column_group,
+        leakage_suspects=target_analysis.leakage_suspects,
+        warnings=warnings
+    )
 
 @router.post("/{dataset_id}/confirm-composite", response_model=ConfirmCompositeResponse)
 async def confirm_composite(

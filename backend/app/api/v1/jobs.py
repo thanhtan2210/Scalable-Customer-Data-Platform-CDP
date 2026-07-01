@@ -11,6 +11,7 @@ from ...core.storage import storage
 from ...core.training.automl import run_automl
 from ...core.profiler.column_profile import ColumnProfile
 from ...core.profiler.target_analysis import CompositeTargetConfig
+from ...core.ingestion.parsers import parse_file
 from typing import Optional, List
 
 router = APIRouter(prefix="/jobs", tags=["jobs"])
@@ -21,19 +22,28 @@ async def training_task(
     target: str,
     profiles_dict: list,
     db_session: Session,
-    composite_config: Optional[CompositeTargetConfig] = None,  # Bug 1 fix
+    composite_config: Optional[CompositeTargetConfig] = None,
     prior_model_uri: Optional[str] = None,
 ):
     try:
-        # 1. Load Data
+        # 1. Update status to training
+        job = db_session.query(TrainingJob).filter(TrainingJob.id == job_id).first()
+        if job:
+            job.status = "training"
         dataset = db_session.query(Dataset).filter(Dataset.id == dataset_id).first()
-        content = storage.download_file(dataset.r2_path)
-        df = pd.read_csv(io.BytesIO(content)) if dataset.filename.endswith('.csv') else pd.read_parquet(io.BytesIO(content))
+        if dataset:
+            dataset.status = "training"
+        db_session.commit()
 
-        # 2. Reconstruct ColumnProfile objects from dict
+        # 2. Load Data
+        content = storage.download_file(dataset.r2_path)
+        result = parse_file(content=content, filename=dataset.filename)
+        df = result.df
+
+        # 3. Reconstruct ColumnProfile objects from dict
         confirmed_profiles = [ColumnProfile(**p) for p in profiles_dict]
 
-        # 3. Run AutoML — now with composite_config to enable MTL path
+        # 4. Run AutoML
         model_uri, _schema_path = run_automl(
             df,
             confirmed_profiles,
@@ -43,10 +53,27 @@ async def training_task(
             prior_model_uri=prior_model_uri,
         )
 
-        # Extract best_roc_auc from MLflow
+        # 5. Generate and Save Schema (FIX)
+        try:
+            from ...core.pipeline.schema_gen import generate_schema, save_schema
+            schema, metadata = generate_schema(confirmed_profiles, dataset_id, target)
+            save_schema(schema, metadata, dataset_id, target)
+        except Exception as schema_ex:
+            job = db_session.query(TrainingJob).filter(TrainingJob.id == job_id).first()
+            if job:
+                job.status = "failed"
+                job.error_message = f"Schema save failed: {str(schema_ex)}"
+            dataset = db_session.query(Dataset).filter(Dataset.id == dataset_id).first()
+            if dataset:
+                dataset.status = "failed"
+            db_session.commit()
+            raise schema_ex
+
+        # Extract metrics from MLflow
         import re
         import mlflow
         best_roc_auc = None
+        optimal_threshold = None
         match = re.search(r"runs:/+([^/]+)", model_uri)
         if match:
             run_id = match.group(1)
@@ -54,24 +81,37 @@ async def training_task(
                 client = mlflow.tracking.MlflowClient()
                 run_data = client.get_run(run_id)
                 best_roc_auc = run_data.data.metrics.get("best_roc_auc")
+                optimal_threshold = run_data.data.metrics.get("optimal_threshold")
             except Exception as ex:
                 print(f"Failed to fetch metric from MLflow: {ex}")
 
-        # 4. Update Job
+        # 6. Update Job
         job = db_session.query(TrainingJob).filter(TrainingJob.id == job_id).first()
-        job.status = "completed"
-        job.model_uri = model_uri
-        if best_roc_auc is not None:
-            job.roc_auc = float(best_roc_auc)
-        job.finished_at = datetime.utcnow()
+        dataset = db_session.query(Dataset).filter(Dataset.id == dataset_id).first()
+        if job:
+            job.status = "completed"
+            job.model_uri = model_uri
+            if best_roc_auc is not None:
+                job.roc_auc = float(best_roc_auc)
+            if optimal_threshold is not None:
+                job.optimal_threshold = float(optimal_threshold)
+            job.finished_at = datetime.utcnow()
 
-        dataset.status = "completed"
+        if dataset:
+            dataset.status = "completed"
         db_session.commit()
     except Exception as e:
-        job = db_session.query(TrainingJob).filter(TrainingJob.id == job_id).first()
-        if job:
-            job.status = "failed"
+        try:
+            job = db_session.query(TrainingJob).filter(TrainingJob.id == job_id).first()
+            if job and job.status != "failed":
+                job.status = "failed"
+                job.error_message = str(e)
+            dataset = db_session.query(Dataset).filter(Dataset.id == dataset_id).first()
+            if dataset and dataset.status != "failed":
+                dataset.status = "failed"
             db_session.commit()
+        except Exception as commit_ex:
+            print(f"Failed to save failure status to DB: {commit_ex}")
         print(f"Training Failed for {job_id}: {str(e)}")
 
 @router.post("/datasets/{dataset_id}/train", response_model=JobResponse)
@@ -84,12 +124,32 @@ async def start_training(
     dataset = db.query(Dataset).filter(Dataset.id == dataset_id).first()
     if not dataset:
         raise HTTPException(status_code=404, detail="Dataset not found")
+        
+    # Validate confirmed_target exists in dataset
+    try:
+        content = storage.download_file(dataset.r2_path)
+    except Exception as e:
+        raise HTTPException(status_code=404, detail=f"File not found in storage: {str(e)}")
+        
+    try:
+        result = parse_file(content=content, filename=dataset.filename)
+        df = result.df
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Failed to parse dataset file: {str(e)}")
+        
+    if df is None:
+        raise HTTPException(status_code=400, detail="Failed to parse dataset dataframe")
+        
+    if req.confirmed_target not in df.columns:
+        raise HTTPException(status_code=400, detail=f"Confirmed target '{req.confirmed_target}' not found in dataset columns")
     
     # Idempotency check
     existing_job = db.query(TrainingJob).filter(
         TrainingJob.dataset_id == dataset_id,
         TrainingJob.target_column == req.confirmed_target,
-        TrainingJob.status == "completed"
+        TrainingJob.status == "completed",
+        TrainingJob.roc_auc > 0.65,
+        TrainingJob.prior_model_uri == req.prior_model_uri
     ).first()
     
     if existing_job:
@@ -99,16 +159,17 @@ async def start_training(
             "estimated_minutes": 0
         }
 
-    # Create Job
+    # Create Job with status="queued"
     job_id = str(uuid.uuid4())
     new_job = TrainingJob(
         id=job_id,
         dataset_id=dataset_id,
-        status="training",
-        target_column=req.confirmed_target
+        status="queued",
+        target_column=req.confirmed_target,
+        prior_model_uri=req.prior_model_uri
     )
     db.add(new_job)
-    dataset.status = "training"
+    dataset.status = "queued"
     db.commit()
 
     # Trigger Background Task
@@ -119,14 +180,14 @@ async def start_training(
         req.confirmed_target,
         [p.dict() for p in req.confirmed_profiles],
         db,
-        req.composite_config,  # Bug 1 fix: pass CPI config through
+        req.composite_config,
         req.prior_model_uri,
     )
 
     return {
         "job_id": job_id,
-        "status": "training",
-        "estimated_minutes": 5 # Static estimate for MVP
+        "status": "queued",
+        "estimated_minutes": 5
     }
 
 @router.get("/{job_id}/status", response_model=JobStatusResponse)
@@ -140,5 +201,6 @@ async def get_job_status(job_id: str, db: Session = Depends(get_db)):
         "status": job.status,
         "roc_auc": job.roc_auc,
         "model_uri": job.model_uri,
+        "optimal_threshold": job.optimal_threshold,
         "finished_at": job.finished_at
     }
