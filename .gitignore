@@ -13,7 +13,7 @@ mlflow.db
 models/
 ci_outputs/
 tests/results/
-test.db
+*.db
 
 # Dependencies
 node_modules/

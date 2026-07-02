@@ -2,7 +2,10 @@ from fastapi import APIRouter, Depends, HTTPException
 from typing import List
 import pandas as pd
 import io
+import logging
 from sqlalchemy.orm import Session
+
+logger = logging.getLogger("cdp.predict")
 from ...db.models import Dataset, TrainingJob, Profile
 from ...db.session import get_db
 from ...api.schemas import PredictionRequest, PredictionResponse, BatchPredictionRequest, BatchPredictionResponse, DriftRequest, DriftResponse
@@ -115,12 +118,12 @@ async def predict_batch(req: BatchPredictionRequest, db: Session = Depends(get_d
                 threshold_data = json.load(f)
                 optimal_threshold = float(threshold_data.get("optimal_threshold"))
         except Exception as ex:
-            print(f"Failed to load optimal_threshold from MLflow artifact: {ex}")
+            logger.error(f"Failed to load optimal_threshold from MLflow artifact: {ex}")
 
     if optimal_threshold is None:
         optimal_threshold = 0.5
         threshold_source = "fallback_default"
-        print("Warning: optimal_threshold not found. Using default fallback threshold of 0.5.")
+        logger.warning("Warning: optimal_threshold not found. Using default fallback threshold of 0.5.")
 
     # 5. Get identifier column if exists
     id_col = None

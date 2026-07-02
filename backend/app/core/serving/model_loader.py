@@ -1,7 +1,10 @@
 import mlflow
 import threading
+import logging
 from typing import Any, Dict
 from datetime import datetime, timedelta
+
+logger = logging.getLogger("cdp.serving.model_loader")
 
 class ModelCache:
     def __init__(self):
@@ -17,7 +20,7 @@ class ModelCache:
                 if datetime.utcnow() - self._last_loaded[model_uri] < self.ttl:
                     return self._models[model_uri]
             
-            print(f"📥 Loading model from registry: {model_uri}")
+            logger.info(f"📥 Loading model from registry: {model_uri}")
             model = mlflow.sklearn.load_model(model_uri)
             self._models[model_uri] = model
             self._last_loaded[model_uri] = datetime.utcnow()
