@@ -4,8 +4,7 @@ on:
   push:
     branches: [ "main" ]
     paths:
-      - 'deploy/api/**'
-      - 'src/api/**'
+      - 'backend/**'
       - '.github/workflows/api-image.yml'
 
 permissions:
@@ -44,7 +43,7 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           context: .
-          file: deploy/api/Dockerfile
+          file: backend/Dockerfile
           push: true
           platforms: linux/amd64
           tags: ${{ steps.meta.outputs.tags }}

@@ -21,10 +21,10 @@ jobs:
         distribution: 'temurin'
         java-version: '11'
 
-    - name: Set up Python 3.10
+    - name: Set up Python 3.11
       uses: actions/setup-python@v4
       with:
-        python-version: "3.10"
+        python-version: "3.11"
 
     - name: Install Dependencies
       run: |
@@ -47,7 +47,7 @@ jobs:
       run: |
         # Set dummy env vars for tests to avoid connection errors
         export MLFLOW_TRACKING_URI=http://localhost:5000
-        export DATABASE_URL=postgresql://user:pass@localhost:5432/db
+        export DATABASE_URL=sqlite:///./tests/test.db
         # Run tests with coverage report
         pytest tests/ -v --maxfail=3
 
