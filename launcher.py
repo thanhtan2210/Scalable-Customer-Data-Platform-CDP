@@ -91,10 +91,8 @@ def run_pipeline():
 
 def run_train():
     """Train the churn prediction model (with MLflow tracking)."""
-    print("🧠 Training Churn Model with MLflow tracking...")
-    from backend.app.core.training.train_mlflow import train
-
-    train()
+    print("🧠 Local legacy training script has been removed for production hardening.")
+    print("💡 Please trigger training via the REST API endpoint: POST /api/v1/jobs/datasets/{dataset_id}/train")
 
 
 def main():
