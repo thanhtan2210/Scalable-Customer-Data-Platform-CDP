@@ -295,6 +295,19 @@ def test_profile_endpoint_success(mock_storage, mock_run_profiling):
     assert len(data["profiles"]) == 2
     assert "leak_col" in data["leakage_suspects"]
 
+    # Test GET profile endpoint retrieving the cached profile
+    get_resp = client.get(f"/api/v1/datasets/{dataset_id}/profile", headers=HEADERS)
+    assert get_resp.status_code == 200
+    get_data = get_resp.json()
+    assert get_data["dataset_id"] == dataset_id
+    assert get_data["suggested_target"] == "churn"
+    assert len(get_data["profiles"]) == 2
+    assert "leak_col" in get_data["leakage_suspects"]
+    
+    # Test GET profile endpoint with non-existent dataset
+    get_fail_resp = client.get("/api/v1/datasets/non-existent-ds/profile", headers=HEADERS)
+    assert get_fail_resp.status_code == 404
+
 def test_start_training_missing_dataset():
     payload = {
         "confirmed_target": "churn",
