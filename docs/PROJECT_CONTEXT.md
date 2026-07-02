@@ -240,7 +240,7 @@ PredictionResult:   record_id, churn_probability, risk_level  # "High"/"Medium"/
 - [x] StorageClient — `backend/app/core/storage.py` — unified S3/local
 - [x] MLflow setup — `backend/app/core/training/mlflow_utils.py`
 - [x] DB models — `backend/app/db/models.py` — 3 tables
-- [~] Supabase connection — ⚠️ Đã có lỗi ENOTFOUND trước đây, chưa verify lại
+- [x] Supabase connection — Đã verify thành công kết nối Supabase, Cloudflare R2 và DagsHub
 
 ### Phase 1 — Data Contract & Profiling Engine
 
