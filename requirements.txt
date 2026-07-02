@@ -19,6 +19,7 @@ optuna
 # --- BACKEND (FASTAPI) ---
 fastapi
 uvicorn
+gunicorn
 pydantic
 python-multipart
 requests

@@ -31,13 +31,16 @@ async def predict(req: PredictionRequest, db: Session = Depends(get_db)):
     # 3. Prepare Input
     input_df = pd.DataFrame(req.records)
     
+    # 4. Get optimal threshold
+    optimal_threshold, _ = get_optimal_threshold(job)
+    
     try:
-        # 4. Predict
+        # 5. Predict
         probabilities = model.predict_proba(input_df)[:, 1]
         
         results = []
         for i, prob in enumerate(probabilities):
-            risk = "High" if prob > 0.7 else ("Medium" if prob > 0.4 else "Low")
+            risk = classify_risk(float(prob), optimal_threshold)
             results.append({
                 "record_id": req.records[i].get("id") or str(i),
                 "churn_probability": float(prob),
@@ -47,6 +50,44 @@ async def predict(req: PredictionRequest, db: Session = Depends(get_db)):
         return {"predictions": results}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Inference failed: {str(e)}")
+
+def get_optimal_threshold(job: TrainingJob) -> tuple[float, str]:
+    import re
+    import json
+    import mlflow
+    optimal_threshold = None
+    threshold_source = "optimal"
+    
+    match = re.search(r"runs:/+([^/]+)", job.model_uri)
+    if match:
+        run_id = match.group(1)
+        try:
+            client = mlflow.tracking.MlflowClient()
+            run_data = client.get_run(run_id)
+            optimal_threshold = run_data.data.metrics.get("optimal_threshold")
+        except Exception:
+            pass
+
+    if optimal_threshold is None:
+        if job.optimal_threshold is not None:
+            optimal_threshold = job.optimal_threshold
+
+    if optimal_threshold is None and match:
+        try:
+            client = mlflow.tracking.MlflowClient()
+            local_path = client.download_artifacts(run_id, "threshold.json")
+            with open(local_path, "r") as f:
+                threshold_data = json.load(f)
+                optimal_threshold = float(threshold_data.get("optimal_threshold"))
+        except Exception as ex:
+            logger.error(f"Failed to load optimal_threshold from MLflow artifact: {ex}")
+
+    if optimal_threshold is None:
+        optimal_threshold = 0.5
+        threshold_source = "fallback_default"
+        logger.warning("Warning: optimal_threshold not found. Using default fallback threshold of 0.5.")
+        
+    return optimal_threshold, threshold_source
 
 def classify_risk(prob: float, threshold: float) -> str:
     if prob >= min(threshold * 1.5, 0.85):
@@ -89,41 +130,8 @@ async def predict_batch(req: BatchPredictionRequest, db: Session = Depends(get_d
     if df is None or df.empty:
          raise HTTPException(status_code=400, detail="Empty or invalid dataset dataframe")
 
-    # 4. Load optimal_threshold from MLflow artifact or DB fallback (Fix 2)
-    import re
-    import json
-    import mlflow
-    optimal_threshold = None
-    threshold_source = "optimal"
-    
-    match = re.search(r"runs:/+([^/]+)", job.model_uri)
-    if match:
-        run_id = match.group(1)
-        try:
-            client = mlflow.tracking.MlflowClient()
-            run_data = client.get_run(run_id)
-            optimal_threshold = run_data.data.metrics.get("optimal_threshold")
-        except Exception:
-            pass
-
-    if optimal_threshold is None:
-        if job.optimal_threshold is not None:
-            optimal_threshold = job.optimal_threshold
-
-    if optimal_threshold is None and match:
-        try:
-            client = mlflow.tracking.MlflowClient()
-            local_path = client.download_artifacts(run_id, "threshold.json")
-            with open(local_path, "r") as f:
-                threshold_data = json.load(f)
-                optimal_threshold = float(threshold_data.get("optimal_threshold"))
-        except Exception as ex:
-            logger.error(f"Failed to load optimal_threshold from MLflow artifact: {ex}")
-
-    if optimal_threshold is None:
-        optimal_threshold = 0.5
-        threshold_source = "fallback_default"
-        logger.warning("Warning: optimal_threshold not found. Using default fallback threshold of 0.5.")
+    # 4. Load optimal_threshold using helper (Fix 2)
+    optimal_threshold, threshold_source = get_optimal_threshold(job)
 
     # 5. Get identifier column if exists
     id_col = None

@@ -24,7 +24,7 @@ jobs:
           DATABASE_URL: sqlite:///./test.db
           API_KEY: test-api-key
         run: |
-          python -m pytest backend/tests -v
+          python -m pytest tests/ -v
 
   deploy-backend:
     needs: test
