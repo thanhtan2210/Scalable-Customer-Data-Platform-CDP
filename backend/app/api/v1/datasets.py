@@ -148,6 +148,43 @@ async def profile_dataset(dataset_id: str, db: Session = Depends(get_db)):
         warnings=warnings
     )
 
+@router.get("/{dataset_id}/profile", response_model=ProfilingResponse)
+async def get_dataset_profile(dataset_id: str, db: Session = Depends(get_db)):
+    dataset = db.query(Dataset).filter(Dataset.id == dataset_id).first()
+    if not dataset:
+        raise HTTPException(status_code=404, detail="Dataset not found")
+        
+    profile = db.query(Profile).filter(Profile.dataset_id == dataset_id).first()
+    if not profile:
+        raise HTTPException(status_code=404, detail="Profile not found. Please run profiling first using POST.")
+        
+    try:
+        from ...core.profiler.target_analysis import TargetAnalysis
+        target_analysis = TargetAnalysis.parse_raw(profile.suggested_target)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to parse target analysis from database: {str(e)}")
+        
+    from ...core.profiler.column_profile import ColumnProfile
+    profiles = [ColumnProfile(**p) for p in profile.profiles_json]
+    
+    warnings = []
+    for p in profiles:
+        role_str = p.inferred_role.value if hasattr(p.inferred_role, "value") else str(p.inferred_role)
+        if role_str in ["ID", "IGNORE"]:
+            reason = "Identifier column" if role_str == "ID" else "Ignored column"
+            warnings.append(f"Column '{p.name}' dropped: {reason}")
+            
+    return ProfilingResponse(
+        dataset_id=dataset_id,
+        profiles=profiles,
+        suggested_target=target_analysis.recommended_target,
+        candidate_targets=target_analysis.candidate_targets,
+        composite_target=target_analysis.composite_target,
+        churn_column_group=target_analysis.churn_column_group,
+        leakage_suspects=target_analysis.leakage_suspects,
+        warnings=warnings
+    )
+
 @router.post("/{dataset_id}/confirm-composite", response_model=ConfirmCompositeResponse)
 async def confirm_composite(
     dataset_id: str,
