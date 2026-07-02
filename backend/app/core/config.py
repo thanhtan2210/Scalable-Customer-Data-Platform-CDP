@@ -69,4 +69,11 @@ CPI_VARIANCE_THRESHOLD: float = float(os.getenv("CPI_VARIANCE_THRESHOLD", "0.8")
 CPI_AUTO_THRESHOLD: int = int(os.getenv("CPI_AUTO_THRESHOLD", "2"))
 COMPOSITE_SYNTHESIS_ENABLED: bool = os.getenv("COMPOSITE_SYNTHESIS_ENABLED", "True").lower() == "true"
 
+# App & Environment settings
+ENVIRONMENT: str = os.getenv("ENVIRONMENT", "local")
+DEBUG: bool = os.getenv("DEBUG", "True").lower() == "true"
+API_KEY: str = os.getenv("API_KEY", "test-api-key")
+ALLOWED_ORIGINS: str = os.getenv("ALLOWED_ORIGINS", "*")
+
+
 

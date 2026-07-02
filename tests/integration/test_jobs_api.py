@@ -46,6 +46,7 @@ def clean_db():
 @patch("backend.app.api.v1.jobs.storage")
 @patch("backend.app.api.v1.jobs.run_automl")
 @patch("mlflow.tracking.MlflowClient")
+@patch("backend.app.api.v1.jobs.SessionLocal", new=TestingSessionLocal)
 def test_start_training_happy_path(mock_mlflow_client, mock_run_automl, mock_storage):
     db = TestingSessionLocal()
     
@@ -140,6 +141,7 @@ def test_start_training_happy_path(mock_mlflow_client, mock_run_automl, mock_sto
 @patch("backend.app.api.v1.jobs.storage")
 @patch("backend.app.api.v1.jobs.run_automl")
 @patch("mlflow.tracking.MlflowClient")
+@patch("backend.app.api.v1.jobs.SessionLocal", new=TestingSessionLocal)
 def test_idempotency_and_schema_saving_failures(mock_mlflow_client, mock_run_automl, mock_storage):
     db = TestingSessionLocal()
     

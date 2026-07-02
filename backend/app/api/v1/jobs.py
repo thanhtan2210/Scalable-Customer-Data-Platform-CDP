@@ -2,10 +2,13 @@ from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from sqlalchemy.orm import Session
 from datetime import datetime
 import uuid
+import logging
+
+logger = logging.getLogger("cdp.jobs")
 import io
 import pandas as pd
 from ...db.models import Dataset, TrainingJob, Profile
-from ...db.session import get_db
+from ...db.session import get_db, SessionLocal
 from ...api.schemas import TrainingRequest, JobResponse, JobStatusResponse
 from ...core.storage import storage
 from ...core.training.automl import run_automl
@@ -21,10 +24,10 @@ async def training_task(
     dataset_id: str,
     target: str,
     profiles_dict: list,
-    db_session: Session,
     composite_config: Optional[CompositeTargetConfig] = None,
     prior_model_uri: Optional[str] = None,
 ):
+    db_session = SessionLocal()
     try:
         # 1. Update status to training
         job = db_session.query(TrainingJob).filter(TrainingJob.id == job_id).first()
@@ -83,7 +86,7 @@ async def training_task(
                 best_roc_auc = run_data.data.metrics.get("best_roc_auc")
                 optimal_threshold = run_data.data.metrics.get("optimal_threshold")
             except Exception as ex:
-                print(f"Failed to fetch metric from MLflow: {ex}")
+                logger.error(f"Failed to fetch metric from MLflow: {ex}")
 
         # 6. Update Job
         job = db_session.query(TrainingJob).filter(TrainingJob.id == job_id).first()
@@ -111,8 +114,11 @@ async def training_task(
                 dataset.status = "failed"
             db_session.commit()
         except Exception as commit_ex:
-            print(f"Failed to save failure status to DB: {commit_ex}")
-        print(f"Training Failed for {job_id}: {str(e)}")
+            logger.error(f"Failed to save failure status to DB: {commit_ex}")
+        logger.error(f"Training Failed for {job_id}: {str(e)}")
+    finally:
+        db_session.close()
+
 
 @router.post("/datasets/{dataset_id}/train", response_model=JobResponse)
 async def start_training(
@@ -179,7 +185,6 @@ async def start_training(
         dataset_id,
         req.confirmed_target,
         [p.dict() for p in req.confirmed_profiles],
-        db,
         req.composite_config,
         req.prior_model_uri,
     )

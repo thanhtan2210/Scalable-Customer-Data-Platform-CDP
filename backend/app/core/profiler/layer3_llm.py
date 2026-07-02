@@ -1,5 +1,8 @@
 import os
+import logging
 from .column_profile import DataRole
+
+logger = logging.getLogger("cdp.profiler.layer3_llm")
 
 PROMPT_TEMPLATE = """Tôi có một tập dữ liệu không xác định ngành nghề. Phân tích cột có tên '{column_name}'. 
 Các giá trị mẫu ngẫu nhiên: {sample_values}. 
@@ -19,6 +22,6 @@ def refine_with_llm(sample_values: list, profile: dict) -> dict:
         # Pseudo LLM inference logic (Graceful fallback)
         pass
     except Exception as e:
-        print(f"LLM Layer failed: {e}. Gracefully degrading.")
+        logger.error(f"LLM Layer failed: {e}. Gracefully degrading.")
         
     return profile
