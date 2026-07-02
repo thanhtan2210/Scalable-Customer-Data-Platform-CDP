@@ -17,7 +17,7 @@
 
 | File          | Endpoints                                                 | Trạng thái       |
 | ------------- | --------------------------------------------------------- | ---------------- |
-| `datasets.py` | `POST /datasets/upload`, `POST /datasets/{id}/profile`    | Production-ready |
+| `datasets.py` | `POST /datasets/upload`, `POST/GET /datasets/{id}/profile` | Production-ready |
 | `jobs.py`     | `POST /jobs/datasets/{id}/train`, `GET /jobs/{id}/status` | Production-ready |
 | `predict.py`  | `POST /predict`                                           | Production-ready |
 
