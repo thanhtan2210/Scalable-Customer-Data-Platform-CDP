@@ -276,7 +276,7 @@ PredictionResult:   record_id, churn_probability, risk_level  # "High"/"Medium"/
 - [x] `ModelCache` — `serving/model_loader.py`
 - [x] A/B testing service — `serving/ab_service.py`
 - [x] Streamlit dashboard — `analytics/streamlit_app.py` (partial)
-- [ ] Model drift monitoring — chưa có
+- [x] Model drift monitoring — `drift_detector.py`
 - [x] Automated retraining trigger / endpoint — `POST /jobs/datasets/{id}/train` (queued state & background worker)
 - [x] `POST /datasets/{id}/confirm-composite` — **[GAP fixed]**
 - [x] Universal file ingestion (Excel/JSON/TSV) — `parsers.py` **[Phase 3 check]**

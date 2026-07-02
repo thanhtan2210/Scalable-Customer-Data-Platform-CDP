@@ -93,3 +93,21 @@ class BatchPredictionResponse(BaseModel):
     predictions: List[BatchPredictionResult]
     threshold_used: float
     threshold_source: str
+
+class DriftRequest(BaseModel):
+    target_file_path: str
+
+class FeatureDriftResult(BaseModel):
+    type: str
+    ks_statistic: Optional[float] = None
+    ks_p_value: Optional[float] = None
+    psi: float
+    drift_level: str
+    is_drifted: bool
+
+class DriftResponse(BaseModel):
+    dataset_id: str
+    reference_rows: int
+    target_rows: int
+    drift_detected: bool
+    metrics: Dict[str, FeatureDriftResult]

@@ -3,9 +3,9 @@ from typing import List
 import pandas as pd
 import io
 from sqlalchemy.orm import Session
-from ...db.models import Dataset, TrainingJob
+from ...db.models import Dataset, TrainingJob, Profile
 from ...db.session import get_db
-from ...api.schemas import PredictionRequest, PredictionResponse, BatchPredictionRequest, BatchPredictionResponse
+from ...api.schemas import PredictionRequest, PredictionResponse, BatchPredictionRequest, BatchPredictionResponse, DriftRequest, DriftResponse
 from ...core.storage import storage
 from ...core.serving.model_loader import model_cache
 
@@ -239,3 +239,91 @@ async def get_feature_importance(dataset_id: str, db: Session = Depends(get_db))
     )
     
     return {"feature_importances": sorted_importances}
+
+@router.post("/datasets/{dataset_id}/drift", response_model=DriftResponse)
+async def detect_dataset_drift(dataset_id: str, req: DriftRequest, db: Session = Depends(get_db)):
+    # 1. Get Dataset and its profile
+    dataset = db.query(Dataset).filter(Dataset.id == dataset_id).first()
+    if not dataset:
+        raise HTTPException(status_code=404, detail="Dataset not found")
+        
+    profile_record = db.query(Profile).filter(Profile.dataset_id == dataset_id).first()
+    if not profile_record or not profile_record.profiles_json:
+        raise HTTPException(status_code=404, detail="Dataset profile not found")
+
+    # 2. Get Best Completed Training Job to identify feature columns
+    job = db.query(TrainingJob).filter(
+        TrainingJob.dataset_id == dataset_id,
+        TrainingJob.status == "completed"
+    ).order_by(TrainingJob.roc_auc.desc()).first()
+    
+    if not job or not job.model_uri:
+        raise HTTPException(status_code=404, detail="No completed training job found for this dataset")
+
+    # 3. Load Model to extract feature names
+    try:
+        model = model_cache.get_model(job.model_uri)
+    except Exception as e:
+         raise HTTPException(status_code=500, detail=f"Failed to load model: {str(e)}")
+
+    # 4. Determine feature columns and their types from profiles
+    profiles_list = profile_record.profiles_json
+    numerical_cols = [p["name"] for p in profiles_list if p["inferred_role"] == "NUMERIC"]
+    categorical_cols = [p["name"] for p in profiles_list if p["inferred_role"] == "CATEGORICAL"]
+
+    feature_cols = []
+    if hasattr(model, "feature_names_in_"):
+        feature_cols = list(model.feature_names_in_)
+    elif hasattr(model, "steps") and hasattr(model.steps[0][1], "feature_names_in_"):
+        feature_cols = list(model.steps[0][1].feature_names_in_)
+    
+    if not feature_cols:
+        feature_cols = [
+            c for c in numerical_cols + categorical_cols
+            if c != job.target_column and c.lower() not in ["customerid", "customer_id", "id", "record_id", "uuid", "churn"]
+        ]
+
+    # 5. Download original training dataset (reference)
+    try:
+        ref_content = storage.download_file(dataset.r2_path)
+    except Exception as e:
+        raise HTTPException(status_code=404, detail=f"Reference training dataset not found in storage: {str(e)}")
+
+    # 6. Download target inference dataset (target)
+    try:
+        target_content = storage.download_file(req.target_file_path)
+    except Exception as e:
+        raise HTTPException(status_code=404, detail=f"Target inference dataset not found in storage: {str(e)}")
+
+    # Parse dataframes
+    from ...core.ingestion.parsers import parse_file
+    try:
+        ref_df = parse_file(content=ref_content, filename=dataset.filename).df
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Failed to parse reference dataset: {str(e)}")
+
+    try:
+        target_df = parse_file(content=target_content, filename=req.target_file_path).df
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Failed to parse target dataset: {str(e)}")
+
+    if ref_df is None or ref_df.empty or target_df is None or target_df.empty:
+         raise HTTPException(status_code=400, detail="Empty reference or target dataframe")
+
+    # 7. Run drift detector
+    from ...core.serving.drift_detector import calculate_drift_report
+    report = calculate_drift_report(
+        reference_df=ref_df,
+        target_df=target_df,
+        feature_cols=feature_cols,
+        numerical_cols=numerical_cols,
+        categorical_cols=categorical_cols
+    )
+
+    return {
+        "dataset_id": dataset_id,
+        "reference_rows": len(ref_df),
+        "target_rows": len(target_df),
+        "drift_detected": report["drift_detected"],
+        "metrics": report["metrics"]
+    }
