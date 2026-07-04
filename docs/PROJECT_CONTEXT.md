@@ -272,12 +272,20 @@ PredictionResult:   record_id, churn_probability, risk_level  # "High"/"Medium"/
 
 ### Phase 3 — MLOps / Serving & BI
 
+- [x] Fix profiling endpoint (tuple mismatch)
+- [x] ProfilingResponse schema đầy đủ (candidate_targets, churn_column_group, composite_target, leakage_suspects)
+- [x] Training trigger endpoint + idempotency
+- [x] save_schema() trước status="completed"
+- [x] Re-evaluate leakage endpoint (profiles updated in DB)
+- [x] Batch prediction endpoint (optimal_threshold, threshold_source)
+- [x] load_threshold_from_artifact() fix (production code, không phải test workaround)
+- [x] E2E Docker test: 7/7 PASS
+- [x] Artifacts verified: schema + metadata + threshold.json
 - [x] `POST /predict` (Single record inference) — `api/v1/predict.py`
 - [x] `ModelCache` — `serving/model_loader.py`
 - [x] A/B testing service — `serving/ab_service.py`
 - [x] Streamlit dashboard — `analytics/streamlit_app.py` (partial)
 - [x] Model drift monitoring — `drift_detector.py`
-- [x] Automated retraining trigger / endpoint — `POST /jobs/datasets/{id}/train` (queued state & background worker)
 - [x] `POST /datasets/{id}/confirm-composite` — **[GAP fixed]**
 - [x] Universal file ingestion (Excel/JSON/TSV) — `parsers.py` **[Phase 3 check]**
 - [x] `POST /datasets/{id}/select-sheet` — Xử lý chọn sheet cho Excel đa sheet
@@ -314,28 +322,26 @@ PredictionResult:   record_id, churn_probability, risk_level  # "High"/"Medium"/
 | `backend/app/core/pipeline/transforms/`     | Registry imputers/transformers theo strategy     |
 | `backend/app/core/training/model_router.py` | Routing logic chọn model candidates              |
 | `backend/app/core/training/automl.py`       | AutoML entry point — MTL vs Standard path        |
-| `backend/app/core/serving/ab_service.py`    | A/B testing — hash assignment + exposure logging |
+| `backend/app/core/training/continual_trainer.py` | Continual learning (EWC & Replay buffer)   |
 | `backend/app/core/etl/` (7 files)           | Toàn bộ ETL pipeline — không có doc nào          |
-| `backend/app/core/storage.py`               | Unified StorageClient S3/local                   |
-| `scripts/validation/validate_*.py`                     | Validation scripts — chưa có hướng dẫn           |
-| `analytics/streamlit_app.py`                | Streamlit dashboard                              |
 
 ---
 
-## Mục 9: Task tiếp theo (theo thứ tự ưu tiên)
+## Mục 9: Task tiếp theo (Phase 4)
 
-### 1. Fix Column Review UI TypeScript errors — Phase 4 Frontend
-*   **File**: `frontend/src/pages/ColumnReview.jsx`
-*   **Dependency**: API profile & leakage endpoints done.
+### 1. Upload flow — frontend/src/pages/Upload.jsx
+*   **Dependency**: Không có
+*   **Note**: Drag & drop, auto-navigate sang ColumnReview sau khi profile xong
 
-### 2. Training status UI — Phase 4 Frontend
-*   **File**: `frontend/src/pages/Jobs.jsx`
-*   **Dependency**: Jobs trigger & status APIs done.
+### 2. Column Review UI — frontend/src/pages/ColumnReview.jsx
+*   **Dependency**: Task 1
+*   **Note**: Fix TypeScript errors, API path, hiển thị composite_target nếu không null, confirm dialog khi requires_confirmation=True
 
-### 3. Streamlit dashboard completion — Phase 3 BI
-*   **File**: `analytics/streamlit_app.py`
-*   **Dependency**: Model explainability & cohort analysis implementation.
+### 3. Training Status UI — frontend/src/pages/Jobs.jsx
+*   **Dependency**: Task 2
 
-### 4. Model drift monitoring — Phase 3 MLOps
-*   **File**: `backend/app/core/serving/drift_detector.py`
-*   **Dependency**: None.
+### 4. Model Hub — frontend/src/pages/ModelHub.jsx
+*   **Dependency**: Task 3
+
+### 5. Streamlit Analytics — analytics/pages/profiling.py
+*   **Dependency**: Task 4 (cần real data từ API)

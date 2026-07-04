@@ -18,9 +18,7 @@ config = context.config
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-# set sqlalchemy.url from DATABASE_URL environment variable if present
-if "DATABASE_URL" in os.environ:
-    config.set_main_option("sqlalchemy.url", os.environ["DATABASE_URL"])
+# DATABASE_URL is read directly in run_migrations_online/offline to avoid percent interpolation errors.
 
 # Add your model's MetaData object for 'autogenerate' support
 # from myapp import mymodel
@@ -40,7 +38,7 @@ def run_migrations_offline() -> None:
     script output.
 
     """
-    url = config.get_main_option("sqlalchemy.url")
+    url = os.environ.get("DATABASE_URL", config.get_main_option("sqlalchemy.url"))
     context.configure(
         url=url,
         target_metadata=target_metadata,

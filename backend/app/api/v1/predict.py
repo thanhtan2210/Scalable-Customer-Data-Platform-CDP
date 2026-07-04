@@ -55,6 +55,8 @@ def get_optimal_threshold(job: TrainingJob) -> tuple[float, str]:
     import re
     import json
     import mlflow
+    import os
+    from urllib.parse import urlparse
     optimal_threshold = None
     threshold_source = "optimal"
     
@@ -81,6 +83,20 @@ def get_optimal_threshold(job: TrainingJob) -> tuple[float, str]:
                 optimal_threshold = float(threshold_data.get("optimal_threshold"))
         except Exception as ex:
             logger.error(f"Failed to load optimal_threshold from MLflow artifact: {ex}")
+
+    # Fallback to parse local file path directly if local URI (Hướng 1)
+    if optimal_threshold is None and (job.model_uri.startswith("file://") or os.path.exists(job.model_uri)):
+        try:
+            path = urlparse(job.model_uri).path
+            if os.name == "nt" and len(path) > 3 and path[0] == "/" and path[2] == ":":
+                path = path[1:]
+            threshold_path = os.path.join(os.path.dirname(path), "threshold.json")
+            if os.path.exists(threshold_path):
+                with open(threshold_path, "r") as f:
+                    threshold_data = json.load(f)
+                    optimal_threshold = float(threshold_data.get("optimal_threshold"))
+        except Exception as ex:
+            logger.error(f"Failed to load optimal_threshold from local file path: {ex}")
 
     if optimal_threshold is None:
         optimal_threshold = 0.5

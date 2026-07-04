@@ -17,6 +17,12 @@ if ENVIRONMENT == "production" and API_KEY == "test-api-key":
 
 app = FastAPI(title="Churn Prediction Platform API")
 
+@app.on_event("startup")
+def startup_db():
+    from .db.session import engine
+    from .db.models import Base
+    Base.metadata.create_all(bind=engine)
+
 # Configure CORS Middleware
 origins = [o.strip() for o in ALLOWED_ORIGINS.split(",") if o.strip()]
 app.add_middleware(
