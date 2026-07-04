@@ -25,6 +25,16 @@ def _hash_dataframe(df: pd.DataFrame) -> str:
     """Creates an MD5 hash of the dataframe for tracking."""
     return hashlib.md5(pd.util.hash_pandas_object(df, index=True).values).hexdigest()
 
+def _cleanup_mlflow():
+    try:
+        import os
+        from .mlflow_utils import cleanup_old_runs
+        exp_name = os.getenv("MLFLOW_EXPERIMENT_NAME", "churn-prediction")
+        keep_n = int(os.getenv("MLFLOW_KEEP_LAST_N_RUNS", "5"))
+        cleanup_old_runs(exp_name, keep_n)
+    except Exception as e:
+        print(f"Failed to cleanup old MLflow runs: {e}")
+
 def run_automl(
     df: pd.DataFrame,
     confirmed_profiles: List[ColumnProfile],
@@ -142,6 +152,7 @@ def run_automl(
             
             model_uri = f"runs:/{run.info.run_id}/model"
             
+        _cleanup_mlflow()
         return model_uri, schema_path
 
     # MTL training path
@@ -225,6 +236,7 @@ def run_automl(
             
             model_uri = f"runs:/{run.info.run_id}/model"
             
+        _cleanup_mlflow()
         return model_uri, schema_path
 
     
@@ -352,4 +364,5 @@ def run_automl(
         
         model_uri = f"runs:/{run.info.run_id}/model"
         
+    _cleanup_mlflow()
     return model_uri, schema_path
