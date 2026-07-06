@@ -51,3 +51,24 @@ data/
 
 # Academic paper preparation drafts (Private)
 docs/paper/
+
+# ── Test artifacts ──────────────────────────
+test_*.db
+test_*.txt
+test_*.json
+
+# ── Local MLflow runs ────────────────────────
+mlruns/
+mlruns_test/
+
+# ── Pytest & coverage ────────────────────────
+.hypothesis/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# ── Local dev requirements ───────────────────
+requirements-local.txt
+
+# ── Personal notes (moved to docs/notes/) ────
+note.md
