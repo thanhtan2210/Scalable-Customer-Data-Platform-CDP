@@ -1,3 +1,4 @@
+# pyrefly: ignore [missing-import]
 from pydantic import BaseModel, Field
 from typing import List, Optional, Dict, Any
 from datetime import datetime
@@ -104,12 +105,14 @@ class BatchPredictionResponse(BaseModel):
     model_type: Optional[str] = None
 
 class DriftRequest(BaseModel):
-    target_file_path: str
+    target_file_path: Optional[str] = None
+    date: Optional[str] = None
 
 class FeatureDriftResult(BaseModel):
     type: str
     ks_statistic: Optional[float] = None
     ks_p_value: Optional[float] = None
+    chi2_p_value: Optional[float] = None
     psi: float
     drift_level: str
     is_drifted: bool

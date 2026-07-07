@@ -107,6 +107,9 @@ services:
       - MLFLOW_S3_ENDPOINT_URL=http://minio:9000
       - OPTUNA_N_TRIALS=3
       - ENABLE_LLM_LAYER=false
+      - DRIFT_AUTO_RETRAIN=true
+      - DRIFT_THRESHOLD=0.2
+      - DRIFT_CHECK_INTERVAL_SEC=3600
     depends_on:
       db:
         condition: service_started

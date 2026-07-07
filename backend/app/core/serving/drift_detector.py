@@ -28,17 +28,13 @@ def calculate_numerical_psi(reference: np.ndarray, target: np.ndarray, num_bins:
     ref_counts, _ = np.histogram(reference, bins=bins)
     target_counts, _ = np.histogram(target, bins=bins)
 
+    # Apply epsilon smoothing directly to counts to avoid 0 counts
+    ref_counts = ref_counts.astype(float) + epsilon
+    target_counts = target_counts.astype(float) + epsilon
+
     # Convert to percentages
-    ref_pct = ref_counts / len(reference)
-    target_pct = target_counts / len(target)
-
-    # Apply epsilon smoothing for 0 values
-    ref_pct = np.where(ref_pct == 0, epsilon, ref_pct)
-    target_pct = np.where(target_pct == 0, epsilon, target_pct)
-
-    # Recalculate sum proportions to make sure they sum to 1
-    ref_pct = ref_pct / np.sum(ref_pct)
-    target_pct = target_pct / np.sum(target_pct)
+    ref_pct = ref_counts / np.sum(ref_counts)
+    target_pct = target_counts / np.sum(target_counts)
 
     # Calculate PSI
     psi_value = np.sum((target_pct - ref_pct) * np.log(target_pct / ref_pct))
@@ -64,26 +60,56 @@ def calculate_categorical_psi(reference: np.ndarray, target: np.ndarray, epsilon
 
     all_categories = set(ref_cats).union(set(target_cats))
 
-    ref_pct_list = []
-    target_pct_list = []
+    ref_counts_list = []
+    target_counts_list = []
 
     for cat in all_categories:
-        ref_pct_list.append(ref_dict.get(cat, 0) / len(reference))
-        target_pct_list.append(target_dict.get(cat, 0) / len(target))
+        ref_counts_list.append(ref_dict.get(cat, 0))
+        target_counts_list.append(target_dict.get(cat, 0))
 
-    ref_pct = np.array(ref_pct_list)
-    target_pct = np.array(target_pct_list)
+    ref_counts = np.array(ref_counts_list).astype(float) + epsilon
+    target_counts = np.array(target_counts_list).astype(float) + epsilon
 
-    # Apply epsilon smoothing
-    ref_pct = np.where(ref_pct == 0, epsilon, ref_pct)
-    target_pct = np.where(target_pct == 0, epsilon, target_pct)
-
-    ref_pct = ref_pct / np.sum(ref_pct)
-    target_pct = target_pct / np.sum(target_pct)
+    ref_pct = ref_counts / np.sum(ref_counts)
+    target_pct = target_counts / np.sum(target_counts)
 
     # Calculate PSI
     psi_value = np.sum((target_pct - ref_pct) * np.log(target_pct / ref_pct))
     return float(psi_value)
+
+def calculate_categorical_chi2(reference: np.ndarray, target: np.ndarray) -> float:
+    """
+    Calculates Chi-squared test p-value for categorical values.
+    Handles alignment and padding zero frequencies.
+    """
+    reference = np.array([str(x) for x in reference if pd.notna(x)])
+    target = np.array([str(x) for x in target if pd.notna(x)])
+
+    if len(reference) == 0 or len(target) == 0:
+        return 1.0
+
+    ref_cats, ref_counts = np.unique(reference, return_counts=True)
+    target_cats, target_counts = np.unique(target, return_counts=True)
+
+    ref_dict = dict(zip(ref_cats, ref_counts))
+    target_dict = dict(zip(target_cats, target_counts))
+
+    all_categories = list(set(ref_cats).union(set(target_cats)))
+    if len(all_categories) <= 1:
+        return 1.0
+
+    obs = []
+    for cat in all_categories:
+        obs.append([ref_dict.get(cat, 0), target_dict.get(cat, 0)])
+        
+    obs = np.array(obs).T
+    obs = obs.astype(float) + 1e-4
+
+    try:
+        chi2, p_val, dof, expected = stats.chi2_contingency(obs)
+        return float(p_val)
+    except Exception:
+        return 1.0
 
 def calculate_drift_report(
     reference_df: pd.DataFrame,
@@ -118,8 +144,7 @@ def calculate_drift_report(
             # 2. Calculate PSI
             psi = calculate_numerical_psi(ref_series, target_series)
 
-            # Determine drift status
-            # High drift if PSI >= 0.2, Moderate if PSI >= 0.1, or KS p-value < 0.05
+            # Determine drift status: drift if PSI >= 0.2 or KS p-value < 0.05
             is_drifted = (psi >= 0.2) or (ks_p_value < 0.05)
             if psi >= 0.2:
                 drift_level = "high"
@@ -138,10 +163,12 @@ def calculate_drift_report(
             }
 
         elif col in categorical_cols:
-            # Calculate PSI for categorical
+            # 1. Calculate PSI for categorical
             psi = calculate_categorical_psi(ref_series, target_series)
+            # 2. Calculate Chi-square test
+            chi2_p_value = calculate_categorical_chi2(ref_series, target_series)
 
-            is_drifted = psi >= 0.2
+            is_drifted = (psi >= 0.2) or (chi2_p_value < 0.05)
             if psi >= 0.2:
                 drift_level = "high"
             elif psi >= 0.1:
@@ -152,6 +179,7 @@ def calculate_drift_report(
             metrics[col] = {
                 "type": "categorical",
                 "psi": psi,
+                "chi2_p_value": chi2_p_value,
                 "drift_level": drift_level,
                 "is_drifted": is_drifted
             }
