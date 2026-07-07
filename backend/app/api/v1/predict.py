@@ -27,9 +27,20 @@ async def predict(req: PredictionRequest, response: Response, db: Session = Depe
         raise HTTPException(status_code=404, detail="No completed training job found for this dataset")
 
     # 2. Load Model (cached)
-    model, model_type = model_cache.get_model(job.model_uri)
+    cache_res = model_cache.get_model(job.model_uri)
+    if isinstance(cache_res, tuple) and len(cache_res) == 2:
+        model, model_type = cache_res
+    else:
+        model = cache_res
+        model_type = "sklearn"
+        
     if model is None:
-        model, model_type = model_cache.load_model(job.model_uri, job.model_uri)
+        load_res = model_cache.load_model(job.model_uri, job.model_uri)
+        if isinstance(load_res, tuple) and len(load_res) == 2:
+            model, model_type = load_res
+        else:
+            model = load_res
+            model_type = "sklearn"
         
     response.headers["X-Model-Type"] = model_type
     
@@ -158,9 +169,20 @@ async def predict_batch(req: BatchPredictionRequest, response: Response, db: Ses
 
     # 2. Load Model (cached)
     try:
-        model, model_type = model_cache.get_model(job.model_uri)
+        cache_res = model_cache.get_model(job.model_uri)
+        if isinstance(cache_res, tuple) and len(cache_res) == 2:
+            model, model_type = cache_res
+        else:
+            model = cache_res
+            model_type = "sklearn"
+            
         if model is None:
-            model, model_type = model_cache.load_model(job.model_uri, job.model_uri)
+            load_res = model_cache.load_model(job.model_uri, job.model_uri)
+            if isinstance(load_res, tuple) and len(load_res) == 2:
+                model, model_type = load_res
+            else:
+                model = load_res
+                model_type = "sklearn"
         response.headers["X-Model-Type"] = model_type
     except Exception as e:
          raise HTTPException(status_code=500, detail=f"Failed to load model: {str(e)}")
@@ -351,6 +373,7 @@ async def get_feature_importance(dataset_id: str, db: Session = Depends(get_db))
     
     return {"feature_importances": sorted_importances}
 
+@router.post("/datasets/{dataset_id}/drift", response_model=DriftResponse)
 @router.post("/{dataset_id}/drift", response_model=DriftResponse)
 async def detect_dataset_drift(dataset_id: str, req: DriftRequest, db: Session = Depends(get_db)):
     # 1. Get Dataset and its profile
@@ -373,9 +396,20 @@ async def detect_dataset_drift(dataset_id: str, req: DriftRequest, db: Session =
 
     # 3. Load Model to extract feature names
     try:
-        model, model_type = model_cache.get_model(job.model_uri)
+        cache_res = model_cache.get_model(job.model_uri)
+        if isinstance(cache_res, tuple) and len(cache_res) == 2:
+            model, model_type = cache_res
+        else:
+            model = cache_res
+            model_type = "sklearn"
+            
         if model is None:
-            model, model_type = model_cache.load_model(job.model_uri, job.model_uri)
+            load_res = model_cache.load_model(job.model_uri, job.model_uri)
+            if isinstance(load_res, tuple) and len(load_res) == 2:
+                model, model_type = load_res
+            else:
+                model = load_res
+                model_type = "sklearn"
     except Exception as e:
          raise HTTPException(status_code=500, detail=f"Failed to load model: {str(e)}")
 

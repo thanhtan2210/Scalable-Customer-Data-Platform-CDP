@@ -52,3 +52,16 @@ class TrainingJob(Base):
     is_active = Column(Boolean, default=False)
     
     dataset = relationship("Dataset", back_populates="training_jobs")
+
+class DriftReport(Base):
+    __tablename__ = "drift_reports"
+
+    id = Column(String, primary_key=True, default=generate_uuid)
+    dataset_id = Column(String, ForeignKey("datasets.id"))
+    reference_rows = Column(Integer)
+    target_rows = Column(Integer)
+    drift_detected = Column(Boolean)
+    metrics = Column(JSON)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    dataset = relationship("Dataset")
