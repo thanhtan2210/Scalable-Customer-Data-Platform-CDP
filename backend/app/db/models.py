@@ -49,5 +49,6 @@ class TrainingJob(Base):
     error_message = Column(String, nullable=True)
     started_at = Column(DateTime, default=datetime.utcnow)
     finished_at = Column(DateTime, nullable=True)
+    is_active = Column(Boolean, default=False)
     
     dataset = relationship("Dataset", back_populates="training_jobs")

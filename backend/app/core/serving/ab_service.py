@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from pathlib import Path
 import hashlib
@@ -9,10 +9,15 @@ import os
 from ..services import exposure_store
 from fastapi.responses import JSONResponse
 
-app = FastAPI(title="AB Assignment & Logging Service")
+router = APIRouter(prefix="/ab", tags=["ab-testing"])
 
 DATA_DIR = Path(__file__).resolve().parents[2] / "reports"
 DATA_DIR.mkdir(parents=True, exist_ok=True)
+
+# Initialize DB on module load
+db_url = os.environ.get("DATABASE_URL")
+if db_url:
+    exposure_store.init_db(db_url)
 
 
 def deterministic_hash(s: str) -> int:
@@ -31,15 +36,7 @@ class ExposureEvent(BaseModel):
     timestamp: float = None
 
 
-@app.on_event("startup")
-def startup():
-    # initialize DB if DATABASE_URL provided
-    db_url = os.environ.get("DATABASE_URL")
-    if db_url:
-        exposure_store.init_db(db_url)
-
-
-@app.post("/assign")
+@router.post("/assign")
 def assign(req: AssignRequest):
     if not req.customer_id:
         raise HTTPException(status_code=400, detail="customer_id required")
@@ -49,7 +46,7 @@ def assign(req: AssignRequest):
     return {"customer_id": req.customer_id, "ab_group": group}
 
 
-@app.post("/log_exposure")
+@router.post("/log_exposure")
 def log_exposure(ev: ExposureEvent):
     ev.timestamp = ev.timestamp or time.time()
     # If DATABASE_URL configured, write to DB; otherwise append to jsonl
@@ -71,6 +68,6 @@ def log_exposure(ev: ExposureEvent):
     return {"status": "ok", "stored": "jsonl"}
 
 
-@app.get("/health")
+@router.get("/health")
 def health():
     return {"status": "ok"}
