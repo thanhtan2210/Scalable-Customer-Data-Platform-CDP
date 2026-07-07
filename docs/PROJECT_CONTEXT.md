@@ -272,25 +272,19 @@ PredictionResult:   record_id, churn_probability, risk_level  # "High"/"Medium"/
 
 ### Phase 3 — MLOps / Serving & BI
 
-- [x] Fix profiling endpoint (tuple mismatch)
-- [x] ProfilingResponse schema đầy đủ (candidate_targets, churn_column_group, composite_target, leakage_suspects)
-- [x] Training trigger endpoint + idempotency
-- [x] save_schema() trước status="completed"
-- [x] Re-evaluate leakage endpoint (profiles updated in DB)
-- [x] Batch prediction endpoint (optimal_threshold, threshold_source)
-- [x] load_threshold_from_artifact() fix (production code, không phải test workaround)
-- [x] E2E Docker test: 7/7 PASS
-- [x] Artifacts verified: schema + metadata + threshold.json
-- [x] `POST /predict` (Single record inference) — `api/v1/predict.py`
-- [x] `ModelCache` — `serving/model_loader.py`
-- [x] A/B testing service — `serving/ab_service.py`
-- [x] Streamlit dashboard — `analytics/streamlit_app.py` (partial)
-- [x] Model drift monitoring — `drift_detector.py`
-- [x] `POST /datasets/{id}/confirm-composite` — **[GAP fixed]**
-- [x] Universal file ingestion (Excel/JSON/TSV) — `parsers.py` **[Phase 3 check]**
-- [x] `POST /datasets/{id}/select-sheet` — Xử lý chọn sheet cho Excel đa sheet
-- [x] `POST /datasets/{id}/re-evaluate-leakage` — Re-evaluate target leakage
-- [x] `POST /predict/batch` — Batch inference utilizing MLflow optimal threshold & dynamic risk levels
+- [x] Fix profiling endpoint tuple mismatch
+- [x] ProfilingResponse schema đầy đủ
+- [x] Training trigger + idempotency
+- [x] Re-evaluate leakage (dict response)
+- [x] Batch prediction + optimal_threshold
+- [x] Model Cache MTL support + invalidate()
+- [x] Monitoring API (health/metrics/summary)
+- [x] A/B Testing integration + is_active migration
+- [x] Drift detection (KS + PSI + Chi-squared)
+- [x] Auto-retrain via lifespan scheduler
+- [x] Inference data capture → parquet
+- [x] E2E Docker: 7/7 PASS
+- [x] 159/159 tests passing
 
 ### Phase 4 — UI / Frontend
 
@@ -327,21 +321,22 @@ PredictionResult:   record_id, churn_probability, risk_level  # "High"/"Medium"/
 
 ---
 
-## Mục 9: Task tiếp theo (Phase 4)
+## Mục 9: Task tiếp theo (Phase 4 Frontend)
 
-### 1. Upload flow — frontend/src/pages/Upload.jsx
-*   **Dependency**: Không có
-*   **Note**: Drag & drop, auto-navigate sang ColumnReview sau khi profile xong
+### 1. Framework: React + Vite (giữ scaffold hiện tại)
+*   **UI**: Ant Design / MUI
+*   **Language**: Song ngữ (toggle VI/EN)
 
-### 2. Column Review UI — frontend/src/pages/ColumnReview.jsx
-*   **Dependency**: Task 1
-*   **Note**: Fix TypeScript errors, API path, hiển thị composite_target nếu không null, confirm dialog khi requires_confirmation=True
+### 2. Upload flow — frontend/src/pages/Upload.jsx
+*   **Dependency**: không có
 
-### 3. Training Status UI — frontend/src/pages/Jobs.jsx
-*   **Dependency**: Task 2
+### 3. Column Review UI — frontend/src/pages/ColumnReview.jsx
+*   **Dependency**: task 2
+*   **Note**: hiển thị composite_target, confirm dialog khi requires_confirmation
 
-### 4. Model Hub — frontend/src/pages/ModelHub.jsx
-*   **Dependency**: Task 3
+### 4. Training Status UI — frontend/src/pages/Jobs.jsx
+*   **Dependency**: task 3
 
-### 5. Streamlit Analytics — analytics/pages/profiling.py
-*   **Dependency**: Task 4 (cần real data từ API)
+### 5. Model Hub — frontend/src/pages/ModelHub.jsx
+*   **Dependency**: task 4
+*   **Note**: integrate A/B testing UI, promote/archive model
