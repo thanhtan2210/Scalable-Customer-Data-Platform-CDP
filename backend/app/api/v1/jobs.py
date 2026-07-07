@@ -105,7 +105,11 @@ async def training_task(
         db_session.commit()
 
         # Sau khi update job status:
-        from app.core.serving.model_loader import model_cache
+        try:
+            from app.core.serving.model_loader import model_cache
+        except ImportError:
+            from backend.app.core.serving.model_loader import model_cache
+            
         invalidated = model_cache.invalidate(dataset_id=dataset_id)
         logger.info(f"Cache invalidated {invalidated} entries for dataset {dataset_id}")
     except Exception as e:
