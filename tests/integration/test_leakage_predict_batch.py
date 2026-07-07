@@ -121,10 +121,11 @@ def test_re_evaluate_leakage(mock_storage):
     resp = client.post(f"/api/v1/datasets/{dataset_id}/re-evaluate-leakage", json=payload, headers=HEADERS)
     assert resp.status_code == 200
     data = resp.json()
+    profiles = data["updated_profiles"]
     
     # Check that roles have switched
-    new_target_profile = next(p for p in data if p["name"] == "new_target")
-    old_target_profile = next(p for p in data if p["name"] == "old_target")
+    new_target_profile = next(p for p in profiles if p["name"] == "new_target")
+    old_target_profile = next(p for p in profiles if p["name"] == "old_target")
     
     assert new_target_profile["inferred_role"] == "TARGET"
     assert old_target_profile["inferred_role"] == "NUMERIC"

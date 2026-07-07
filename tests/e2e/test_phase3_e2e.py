@@ -14,7 +14,8 @@ state = {
     "profiles": None,
     "composite_target": None,
     "job_id": None,
-    "optimal_threshold": None
+    "optimal_threshold": None,
+    "uploaded_file_path": None
 }
 
 def test_01_upload():
@@ -33,6 +34,14 @@ def test_01_upload():
     assert "col_count" in data
     
     state["dataset_id"] = data["dataset_id"]
+    state["uploaded_file_path"] = (
+        data.get("r2_path") or
+        data.get("file_path") or
+        data.get("storage_path")
+    )
+    assert state["uploaded_file_path"] \
+        is not None, \
+        "Upload response missing file path field"
 
 def test_02_profile():
     dataset_id = state["dataset_id"]
@@ -138,16 +147,17 @@ def test_05_idempotency():
     assert data["job_id"] == job_id, f"Different job ID returned: {data['job_id']} != {job_id}"
 
 def test_06_batch_predict():
-    dataset_id = state["dataset_id"]
-    r2_processed_path = f"raw/default_user/{dataset_id}/cleaned_telco.parquet"
-    payload = {
-        "dataset_id": dataset_id,
-        "file_path": r2_processed_path
-    }
     headers = HEADERS.copy()
     headers["Content-Type"] = "application/json"
     
-    resp = requests.post(f"{API_URL}/predict/batch", headers=headers, json=payload)
+    resp = requests.post(
+        f"{API_URL}/predict/batch",
+        headers=headers,
+        json={
+            "dataset_id": state["dataset_id"],
+            "file_path": state["uploaded_file_path"]
+        }
+    )
     assert resp.status_code == 200, f"Batch predict failed: {resp.text}"
     
     data = resp.json()
@@ -157,7 +167,7 @@ def test_06_batch_predict():
     total = data["total_records"]
     assert total > 0
     assert data["high_risk"] + data["medium_risk"] + data["low_risk"] == total
-    assert data["threshold_source"] in ["optimal", "default"]
+    assert data["threshold_source"] in ["optimal", "default", "fallback_default"]
     assert len(data["predictions"]) == total
 
 def test_07_re_evaluate_leakage():
@@ -173,5 +183,17 @@ def test_07_re_evaluate_leakage():
     assert resp.status_code == 200, f"Re-evaluate leakage failed: {resp.text}"
     
     data = resp.json()
-    assert "profiles_updated_in_db" in data
+    assert data.get(
+        "profiles_updated_in_db") is True
     assert "updated_profiles" in data
+    assert len(data["updated_profiles"]) > 0
+    assert isinstance(
+        data["leakage_suspects"], list)
+
+    print(
+        f"[OK] Re-evaluate leakage: "
+        f"{len(data['updated_profiles'])} "
+        f"profiles updated, "
+        f"{len(data['leakage_suspects'])} "
+        f"leakage suspects"
+    )

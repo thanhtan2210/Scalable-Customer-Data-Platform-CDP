@@ -103,6 +103,11 @@ async def training_task(
         if dataset:
             dataset.status = "completed"
         db_session.commit()
+
+        # Sau khi update job status:
+        from app.core.serving.model_loader import model_cache
+        invalidated = model_cache.invalidate(dataset_id=dataset_id)
+        logger.info(f"Cache invalidated {invalidated} entries for dataset {dataset_id}")
     except Exception as e:
         try:
             job = db_session.query(TrainingJob).filter(TrainingJob.id == job_id).first()

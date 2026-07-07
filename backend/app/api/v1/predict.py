@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Response
 from typing import List
 import pandas as pd
 import io
@@ -15,7 +15,7 @@ from ...core.serving.model_loader import model_cache
 router = APIRouter(prefix="/predict", tags=["prediction"])
 
 @router.post("", response_model=PredictionResponse)
-async def predict(req: PredictionRequest, db: Session = Depends(get_db)):
+async def predict(req: PredictionRequest, response: Response, db: Session = Depends(get_db)):
     # 1. Get Best Model for Dataset
     job = db.query(TrainingJob).filter(
         TrainingJob.dataset_id == req.dataset_id, 
@@ -26,11 +26,42 @@ async def predict(req: PredictionRequest, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="No completed training job found for this dataset")
 
     # 2. Load Model (cached)
-    model = model_cache.get_model(job.model_uri)
+    model, model_type = model_cache.get_model(job.model_uri)
+    if model is None:
+        model, model_type = model_cache.load_model(job.model_uri, job.model_uri)
+        
+    response.headers["X-Model-Type"] = model_type
     
     # 3. Prepare Input
     input_df = pd.DataFrame(req.records)
     
+    # Synthesize CPI column if expected by model but missing in input
+    profile = db.query(Profile).filter(Profile.dataset_id == req.dataset_id).first()
+    if profile and profile.suggested_target:
+        try:
+            from ...core.profiler.target_analysis import TargetAnalysis
+            target_analysis = TargetAnalysis.parse_raw(profile.suggested_target)
+            composite_config = target_analysis.composite_target
+            if composite_config:
+                cpi_col = composite_config.cpi_column_name or "cpi_score"
+                if cpi_col not in input_df.columns:
+                    expects_cpi = False
+                    if hasattr(model, "feature_names_in_") and cpi_col in model.feature_names_in_:
+                        expects_cpi = True
+                    elif hasattr(model, "steps") and hasattr(model.steps[0][1], "feature_names_in_") and cpi_col in model.steps[0][1].feature_names_in_:
+                        expects_cpi = True
+                    
+                    if expects_cpi:
+                        from ...core.profiler.target_synthesizer import _weighted_synthesis, _pca_synthesis
+                        if composite_config.strategy == "PCA":
+                            _, cpi_series = _pca_synthesis(input_df, composite_config.source_columns, job.target_column)
+                            input_df[cpi_col] = cpi_series
+                        elif composite_config.strategy == "WEIGHTED" and composite_config.weights:
+                            cpi_series = _weighted_synthesis(input_df, composite_config.weights)
+                            input_df[cpi_col] = cpi_series
+        except Exception as synth_ex:
+            logger.error(f"Failed to synthesize composite column during predict: {synth_ex}")
+            
     # 4. Get optimal threshold
     optimal_threshold, _ = get_optimal_threshold(job)
     
@@ -114,7 +145,7 @@ def classify_risk(prob: float, threshold: float) -> str:
         return "Low"
 
 @router.post("/batch", response_model=BatchPredictionResponse)
-async def predict_batch(req: BatchPredictionRequest, db: Session = Depends(get_db)):
+async def predict_batch(req: BatchPredictionRequest, response: Response, db: Session = Depends(get_db)):
     # 1. Get Best Model for Dataset
     job = db.query(TrainingJob).filter(
         TrainingJob.dataset_id == req.dataset_id, 
@@ -126,7 +157,10 @@ async def predict_batch(req: BatchPredictionRequest, db: Session = Depends(get_d
 
     # 2. Load Model (cached)
     try:
-        model = model_cache.get_model(job.model_uri)
+        model, model_type = model_cache.get_model(job.model_uri)
+        if model is None:
+            model, model_type = model_cache.load_model(job.model_uri, job.model_uri)
+        response.headers["X-Model-Type"] = model_type
     except Exception as e:
          raise HTTPException(status_code=500, detail=f"Failed to load model: {str(e)}")
 
@@ -145,6 +179,33 @@ async def predict_batch(req: BatchPredictionRequest, db: Session = Depends(get_d
 
     if df is None or df.empty:
          raise HTTPException(status_code=400, detail="Empty or invalid dataset dataframe")
+
+    # Synthesize CPI column if expected by model but missing in input dataframe
+    profile = db.query(Profile).filter(Profile.dataset_id == req.dataset_id).first()
+    if profile and profile.suggested_target:
+        try:
+            from ...core.profiler.target_analysis import TargetAnalysis
+            target_analysis = TargetAnalysis.parse_raw(profile.suggested_target)
+            composite_config = target_analysis.composite_target
+            if composite_config:
+                cpi_col = composite_config.cpi_column_name or "cpi_score"
+                if cpi_col not in df.columns:
+                    expects_cpi = False
+                    if hasattr(model, "feature_names_in_") and cpi_col in model.feature_names_in_:
+                        expects_cpi = True
+                    elif hasattr(model, "steps") and hasattr(model.steps[0][1], "feature_names_in_") and cpi_col in model.steps[0][1].feature_names_in_:
+                        expects_cpi = True
+                    
+                    if expects_cpi:
+                        from ...core.profiler.target_synthesizer import _weighted_synthesis, _pca_synthesis
+                        if composite_config.strategy == "PCA":
+                            _, cpi_series = _pca_synthesis(df, composite_config.source_columns, job.target_column)
+                            df[cpi_col] = cpi_series
+                        elif composite_config.strategy == "WEIGHTED" and composite_config.weights:
+                            cpi_series = _weighted_synthesis(df, composite_config.weights)
+                            df[cpi_col] = cpi_series
+        except Exception as synth_ex:
+            logger.error(f"Failed to synthesize composite column during batch predict: {synth_ex}")
 
     # 4. Load optimal_threshold using helper (Fix 2)
     optimal_threshold, threshold_source = get_optimal_threshold(job)
@@ -206,7 +267,8 @@ async def predict_batch(req: BatchPredictionRequest, db: Session = Depends(get_d
         "low_risk": low_count,
         "predictions": results,
         "threshold_used": optimal_threshold,
-        "threshold_source": threshold_source
+        "threshold_source": threshold_source,
+        "model_type": model_type
     }
 
 @router.get("/datasets/{dataset_id}/feature-importance")
