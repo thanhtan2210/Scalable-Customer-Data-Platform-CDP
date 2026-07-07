@@ -6,7 +6,7 @@ import uuid
 from sqlalchemy.orm import Session
 from ...db.models import Dataset, Profile, TrainingJob
 from ...db.session import get_db # Assuming session manager exists
-from ...api.schemas import DatasetResponse, ProfilingResponse, TrainingRequest, JobResponse, ConfirmCompositeRequest, ConfirmCompositeResponse, SelectSheetRequest, ReEvaluateLeakageRequest
+from ...api.schemas import DatasetResponse, ProfilingResponse, TrainingRequest, JobResponse, ConfirmCompositeRequest, ConfirmCompositeResponse, SelectSheetRequest, ReEvaluateLeakageRequest, ReEvaluateLeakageResponse
 from ...core.storage import storage
 from ...core.profiler.orchestrator import run_profiling
 from ...core.profiler.target_analysis import TargetAnalysis
@@ -60,7 +60,8 @@ async def upload_dataset(
             "status": "uploaded",
             "detected_format": result.detected_format,
             "sheets": result.sheets,
-            "requires_sheet_selection": True
+            "requires_sheet_selection": True,
+            "r2_path": r2_path
         }
 
     # If df has data:
@@ -103,7 +104,8 @@ async def upload_dataset(
         "status": "uploaded",
         "detected_format": result.detected_format,
         "sheets": None,
-        "requires_sheet_selection": False
+        "requires_sheet_selection": False,
+        "r2_path": r2_path
     }
 
 @router.post("/{dataset_id}/profile", response_model=ProfilingResponse)
@@ -388,7 +390,7 @@ async def select_sheet(
         "requires_sheet_selection": False
     }
 
-@router.post("/{dataset_id}/re-evaluate-leakage", response_model=List[ColumnProfile])
+@router.post("/{dataset_id}/re-evaluate-leakage", response_model=ReEvaluateLeakageResponse)
 async def re_evaluate_leakage(
     dataset_id: str,
     req: ReEvaluateLeakageRequest,
@@ -472,4 +474,13 @@ async def re_evaluate_leakage(
         
     db.commit()
     
-    return updated_profiles
+    return ReEvaluateLeakageResponse(
+        profiles_updated_in_db=True,
+        updated_profiles=updated_profiles,
+        dataset_id=dataset_id,
+        confirmed_target=req.confirmed_target,
+        leakage_suspects=[
+            p.name for p in updated_profiles
+            if p.potential_leakage
+        ]
+    )

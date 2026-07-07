@@ -13,6 +13,7 @@ class DatasetResponse(BaseModel):
     detected_format: str
     sheets: Optional[List[str]] = None
     requires_sheet_selection: bool = False
+    r2_path: Optional[str] = None
 
     class Config:
         from_attributes = True
@@ -76,6 +77,13 @@ class ConfirmCompositeResponse(BaseModel):
 class ReEvaluateLeakageRequest(BaseModel):
     confirmed_target: str
 
+class ReEvaluateLeakageResponse(BaseModel):
+    profiles_updated_in_db: bool
+    updated_profiles: List[ColumnProfile]
+    dataset_id: str
+    confirmed_target: str
+    leakage_suspects: List[str] = []
+
 class BatchPredictionRequest(BaseModel):
     dataset_id: str
     file_path: str
@@ -93,6 +101,7 @@ class BatchPredictionResponse(BaseModel):
     predictions: List[BatchPredictionResult]
     threshold_used: float
     threshold_source: str
+    model_type: Optional[str] = None
 
 class DriftRequest(BaseModel):
     target_file_path: str
