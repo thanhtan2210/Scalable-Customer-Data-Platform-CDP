@@ -75,5 +75,10 @@ DEBUG: bool = os.getenv("DEBUG", "True").lower() == "true"
 API_KEY: str = os.getenv("API_KEY", "test-api-key")
 ALLOWED_ORIGINS: str = os.getenv("ALLOWED_ORIGINS", "*")
 
+# Drift & Auto-Retraining settings
+DRIFT_AUTO_RETRAIN: bool = os.getenv("DRIFT_AUTO_RETRAIN", "False").lower() == "true"
+DRIFT_THRESHOLD: float = float(os.getenv("DRIFT_THRESHOLD", "0.2"))
+DRIFT_CHECK_INTERVAL_SEC: int = int(os.getenv("DRIFT_CHECK_INTERVAL_SEC", "3600"))
+
 
 

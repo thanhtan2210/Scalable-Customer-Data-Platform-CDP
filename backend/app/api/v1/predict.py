@@ -2,11 +2,12 @@ from fastapi import APIRouter, Depends, HTTPException, Response
 from typing import List
 import pandas as pd
 import io
+from datetime import datetime
 import logging
 from sqlalchemy.orm import Session
 
 logger = logging.getLogger("cdp.predict")
-from ...db.models import Dataset, TrainingJob, Profile
+from ...db.models import Dataset, TrainingJob, Profile, DriftReport
 from ...db.session import get_db
 from ...api.schemas import PredictionRequest, PredictionResponse, BatchPredictionRequest, BatchPredictionResponse, DriftRequest, DriftResponse
 from ...core.storage import storage
@@ -260,6 +261,27 @@ async def predict_batch(req: BatchPredictionRequest, response: Response, db: Ses
             "risk_level": risk
         })
 
+    # Save input data to inference storage (Task 3.0.5)
+    try:
+        import uuid
+        current_date = datetime.utcnow().strftime("%Y-%m-%d")
+        batch_id = str(uuid.uuid4())
+        inference_path = f"ml_artifacts/{req.dataset_id}/inference/{current_date}/{batch_id}.parquet"
+        
+        # Drop target column if it exists to prevent leakage in inference store
+        clean_inf_df = df.copy()
+        if job.target_column in clean_inf_df.columns:
+            clean_inf_df = clean_inf_df.drop(columns=[job.target_column])
+        for col in list(clean_inf_df.columns):
+            if col.lower() == "churn" and col != job.target_column:
+                clean_inf_df = clean_inf_df.drop(columns=[col])
+                
+        pq_buf = io.BytesIO()
+        clean_inf_df.to_parquet(pq_buf, index=False)
+        storage.upload_file(pq_buf.getvalue(), inference_path)
+    except Exception as save_err:
+        logger.error(f"Failed to save batch predict inference data: {save_err}")
+
     return {
         "total_records": len(df),
         "high_risk": high_count,
@@ -329,7 +351,7 @@ async def get_feature_importance(dataset_id: str, db: Session = Depends(get_db))
     
     return {"feature_importances": sorted_importances}
 
-@router.post("/datasets/{dataset_id}/drift", response_model=DriftResponse)
+@router.post("/{dataset_id}/drift", response_model=DriftResponse)
 async def detect_dataset_drift(dataset_id: str, req: DriftRequest, db: Session = Depends(get_db)):
     # 1. Get Dataset and its profile
     dataset = db.query(Dataset).filter(Dataset.id == dataset_id).first()
@@ -351,7 +373,9 @@ async def detect_dataset_drift(dataset_id: str, req: DriftRequest, db: Session =
 
     # 3. Load Model to extract feature names
     try:
-        model = model_cache.get_model(job.model_uri)
+        model, model_type = model_cache.get_model(job.model_uri)
+        if model is None:
+            model, model_type = model_cache.load_model(job.model_uri, job.model_uri)
     except Exception as e:
          raise HTTPException(status_code=500, detail=f"Failed to load model: {str(e)}")
 
@@ -378,11 +402,45 @@ async def detect_dataset_drift(dataset_id: str, req: DriftRequest, db: Session =
     except Exception as e:
         raise HTTPException(status_code=404, detail=f"Reference training dataset not found in storage: {str(e)}")
 
-    # 6. Download target inference dataset (target)
-    try:
-        target_content = storage.download_file(req.target_file_path)
-    except Exception as e:
-        raise HTTPException(status_code=404, detail=f"Target inference dataset not found in storage: {str(e)}")
+    # 6. Load target inference dataset (target)
+    target_dfs = []
+    
+    if req.target_file_path:
+        # Backward compatibility / specific manual file
+        try:
+            target_content = storage.download_file(req.target_file_path)
+            from ...core.ingestion.parsers import parse_file
+            target_df = parse_file(content=target_content, filename=req.target_file_path).df
+            if target_df is not None and not target_df.empty:
+                target_dfs.append(target_df)
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=f"Failed to load target file path: {str(e)}")
+    else:
+        # Auto scan folder for date
+        date_str = req.date or datetime.utcnow().strftime("%Y-%m-%d")
+        prefix = f"ml_artifacts/{dataset_id}/inference/{date_str}/"
+        try:
+            files = storage.list_files(prefix)
+        except Exception:
+            files = []
+            
+        parquet_files = [f for f in files if f.endswith(".parquet")]
+        if not parquet_files:
+            raise HTTPException(status_code=404, detail=f"No inference parquet files found for dataset {dataset_id} on date {date_str}")
+        
+        for file_path in parquet_files:
+            try:
+                f_content = storage.download_file(file_path)
+                df_chunk = pd.read_parquet(io.BytesIO(f_content))
+                if df_chunk is not None and not df_chunk.empty:
+                    target_dfs.append(df_chunk)
+            except Exception as parse_err:
+                logger.warning(f"Failed to parse inference file {file_path}: {parse_err}")
+
+    if not target_dfs:
+        raise HTTPException(status_code=400, detail="No target data could be successfully parsed")
+    
+    target_df = pd.concat(target_dfs, ignore_index=True)
 
     # Parse dataframes
     from ...core.ingestion.parsers import parse_file
@@ -390,11 +448,6 @@ async def detect_dataset_drift(dataset_id: str, req: DriftRequest, db: Session =
         ref_df = parse_file(content=ref_content, filename=dataset.filename).df
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Failed to parse reference dataset: {str(e)}")
-
-    try:
-        target_df = parse_file(content=target_content, filename=req.target_file_path).df
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Failed to parse target dataset: {str(e)}")
 
     if ref_df is None or ref_df.empty or target_df is None or target_df.empty:
          raise HTTPException(status_code=400, detail="Empty reference or target dataframe")
@@ -408,6 +461,18 @@ async def detect_dataset_drift(dataset_id: str, req: DriftRequest, db: Session =
         numerical_cols=numerical_cols,
         categorical_cols=categorical_cols
     )
+
+    # 8. Save report to DB (Task 3.2 & 3.5)
+    drift_report_record = DriftReport(
+        dataset_id=dataset_id,
+        reference_rows=len(ref_df),
+        target_rows=len(target_df),
+        drift_detected=report["drift_detected"],
+        metrics=report["metrics"]
+    )
+    db.add(drift_report_record)
+    db.commit()
+    db.refresh(drift_report_record)
 
     return {
         "dataset_id": dataset_id,

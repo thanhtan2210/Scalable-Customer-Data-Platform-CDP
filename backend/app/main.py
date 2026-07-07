@@ -16,13 +16,27 @@ if ENVIRONMENT == "production" and API_KEY == "test-api-key":
         "CRITICAL SECURITY ERROR: API_KEY cannot be the default 'test-api-key' in production environment!"
     )
 
-app = FastAPI(title="Churn Prediction Platform API")
+import asyncio
+from contextlib import asynccontextmanager
+from .core import config
+from .core.serving.retrain_loop import run_drift_check_loop
 
-@app.on_event("startup")
-def startup_db():
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # startup
     from .db.session import engine
     from .db.models import Base
     Base.metadata.create_all(bind=engine)
+    
+    task = None
+    if config.DRIFT_AUTO_RETRAIN:
+        task = asyncio.create_task(run_drift_check_loop())
+    yield
+    # shutdown
+    if task:
+        task.cancel()
+
+app = FastAPI(title="Churn Prediction Platform API", lifespan=lifespan)
 
 # Configure CORS Middleware
 origins = [o.strip() for o in ALLOWED_ORIGINS.split(",") if o.strip()]
