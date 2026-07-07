@@ -111,4 +111,40 @@ class StorageClient:
                 else:
                     full_path.unlink()
 
+    def ping(self) -> bool:
+        if self.mode == "local":
+            return self.local_base_path.exists()
+        else:
+            self.s3.list_objects_v2(
+                Bucket=self.bucket,
+                MaxKeys=1
+            )
+            return True
+
+    def list_files(self, prefix: str = "") -> list:
+        prefix = prefix.lstrip("/")
+        if self.mode == "s3":
+            paginator = self.s3.get_paginator('list_objects_v2')
+            pages = paginator.paginate(Bucket=self.bucket, Prefix=prefix)
+            keys = []
+            for page in pages:
+                if 'Contents' in page:
+                    for obj in page['Contents']:
+                        keys.append(obj['Key'])
+            return keys
+        else:
+            full_path = self.local_base_path / prefix
+            if not full_path.exists():
+                return []
+            if not full_path.is_dir():
+                return [prefix] if full_path.exists() else []
+            keys = []
+            import os
+            for root, _, files in os.walk(full_path):
+                for f in files:
+                    file_p = Path(root) / f
+                    rel_p = file_p.relative_to(self.local_base_path)
+                    keys.append(str(rel_p).replace("\\", "/"))
+            return keys
+
 storage = StorageClient()
