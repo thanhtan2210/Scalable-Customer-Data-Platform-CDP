@@ -284,11 +284,15 @@ PredictionResult:   record_id, churn_probability, risk_level  # "High"/"Medium"/
 - [x] Auto-retrain via lifespan scheduler
 - [x] Inference data capture → parquet
 - [x] E2E Docker: 7/7 PASS
-- [x] 159/159 tests passing
+- [x] 153/153 tests passing
+- [x] Sprint 1 Security fixes: file size limit, filename sanitize, cache race condition, DB indexes, /docs disabled in production
+- [x] Sprint 2 Reliability fixes: rate limiting (slowapi), training timeout (30min), CORS production config, Alembic auto-run, structured JSON logging + request middleware
+- [x] Sprint 3 Scalability fixes: drift scheduler single-instance flag, predict async (run_in_executor), inference file cleanup (30-day TTL), connection pool tuning, non-root Docker user
+- [x] Production Readiness: 46/60 (từ 32/60 sau 3 sprints)
 
 ### Phase 4 — UI / Frontend
 
-- [ ] React frontend — `frontend/src/` rỗng
+- [/] React frontend — Scaffold đã setup: Next.js App Router, Tailwind, shadcn/ui, next-intl (VI/EN), Zustand, TanStack Query
 
 ---
 
@@ -323,20 +327,9 @@ PredictionResult:   record_id, churn_probability, risk_level  # "High"/"Medium"/
 
 ## Mục 9: Task tiếp theo (Phase 4 Frontend)
 
-### 1. Framework: React + Vite (giữ scaffold hiện tại)
-*   **UI**: Ant Design / MUI
-*   **Language**: Song ngữ (toggle VI/EN)
-
-### 2. Upload flow — frontend/src/pages/Upload.jsx
-*   **Dependency**: không có
-
-### 3. Column Review UI — frontend/src/pages/ColumnReview.jsx
-*   **Dependency**: task 2
-*   **Note**: hiển thị composite_target, confirm dialog khi requires_confirmation
-
-### 4. Training Status UI — frontend/src/pages/Jobs.jsx
-*   **Dependency**: task 3
-
-### 5. Model Hub — frontend/src/pages/ModelHub.jsx
-*   **Dependency**: task 4
-*   **Note**: integrate A/B testing UI, promote/archive model
+Phase 4 Frontend (Next.js 14 + TypeScript):
+1. Scaffold đã setup: Next.js App Router, Tailwind, shadcn/ui, next-intl (VI/EN), Zustand, TanStack Query
+2. Upload page — src/app/[locale]/upload/
+3. Column Review — src/app/[locale]/review/
+4. Training Status — src/app/[locale]/jobs/
+5. Model Hub — src/app/[locale]/models/
