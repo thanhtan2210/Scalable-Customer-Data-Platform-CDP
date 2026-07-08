@@ -80,5 +80,11 @@ DRIFT_AUTO_RETRAIN: bool = os.getenv("DRIFT_AUTO_RETRAIN", "False").lower() == "
 DRIFT_THRESHOLD: float = float(os.getenv("DRIFT_THRESHOLD", "0.2"))
 DRIFT_CHECK_INTERVAL_SEC: int = int(os.getenv("DRIFT_CHECK_INTERVAL_SEC", "3600"))
 
+# Database Pool Settings
+DB_POOL_SIZE: int = int(os.getenv("DB_POOL_SIZE", "20"))
+DB_MAX_OVERFLOW: int = int(os.getenv("DB_MAX_OVERFLOW", "10"))
+DB_POOL_RECYCLE: int = int(os.getenv("DB_POOL_RECYCLE", "1800"))
+DB_POOL_TIMEOUT: int = int(os.getenv("DB_POOL_TIMEOUT", "15"))
+
 
 
