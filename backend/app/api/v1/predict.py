@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Response
+from fastapi import APIRouter, Depends, HTTPException, Response, Request
 from typing import List
 import pandas as pd
 import io
@@ -12,11 +12,13 @@ from ...db.session import get_db
 from ...api.schemas import PredictionRequest, PredictionResponse, BatchPredictionRequest, BatchPredictionResponse, DriftRequest, DriftResponse
 from ...core.storage import storage
 from ...core.serving.model_loader import model_cache
+from ...core.limiter import limiter
 
 router = APIRouter(prefix="/predict", tags=["prediction"])
 
 @router.post("", response_model=PredictionResponse)
-async def predict(req: PredictionRequest, response: Response, db: Session = Depends(get_db)):
+@limiter.limit("120/minute")
+async def predict(request: Request, req: PredictionRequest, response: Response, db: Session = Depends(get_db)):
     # 1. Get Best Model for Dataset
     job = db.query(TrainingJob).filter(
         TrainingJob.dataset_id == req.dataset_id, 
@@ -157,7 +159,8 @@ def classify_risk(prob: float, threshold: float) -> str:
         return "Low"
 
 @router.post("/batch", response_model=BatchPredictionResponse)
-async def predict_batch(req: BatchPredictionRequest, response: Response, db: Session = Depends(get_db)):
+@limiter.limit("20/minute")
+async def predict_batch(request: Request, req: BatchPredictionRequest, response: Response, db: Session = Depends(get_db)):
     # 1. Get Best Model for Dataset
     job = db.query(TrainingJob).filter(
         TrainingJob.dataset_id == req.dataset_id, 
