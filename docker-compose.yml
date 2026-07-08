@@ -110,6 +110,10 @@ services:
       - DRIFT_AUTO_RETRAIN=true
       - DRIFT_THRESHOLD=0.2
       - DRIFT_CHECK_INTERVAL_SEC=3600
+      - DB_POOL_SIZE=30
+      - DB_MAX_OVERFLOW=15
+      - DB_POOL_RECYCLE=1800
+      - DB_POOL_TIMEOUT=15
     depends_on:
       db:
         condition: service_started
