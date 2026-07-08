@@ -38,6 +38,13 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Churn Prediction Platform API", lifespan=lifespan)
 
+from .core.limiter import limiter
+from slowapi.errors import RateLimitExceeded
+from slowapi import _rate_limit_exceeded_handler
+
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
 # Configure CORS Middleware
 origins = [o.strip() for o in ALLOWED_ORIGINS.split(",") if o.strip()]
 app.add_middleware(

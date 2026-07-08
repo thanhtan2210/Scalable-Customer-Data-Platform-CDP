@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
+from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Request
 from sqlalchemy.orm import Session
 from datetime import datetime
 import uuid
@@ -16,6 +16,7 @@ from ...core.profiler.column_profile import ColumnProfile
 from ...core.profiler.target_analysis import CompositeTargetConfig
 from ...core.ingestion.parsers import parse_file
 from typing import Optional, List
+from ...core.limiter import limiter
 
 router = APIRouter(prefix="/jobs", tags=["jobs"])
 
@@ -130,7 +131,9 @@ async def training_task(
 
 
 @router.post("/datasets/{dataset_id}/train", response_model=JobResponse)
+@limiter.limit("2/minute")
 async def start_training(
+    request: Request,
     dataset_id: str, 
     req: TrainingRequest, 
     background_tasks: BackgroundTasks,
