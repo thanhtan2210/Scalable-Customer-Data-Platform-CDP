@@ -21,8 +21,14 @@ router = APIRouter(prefix="/predict", tags=["prediction"])
 @router.post("", response_model=PredictionResponse)
 @limiter.limit("100/minute")
 async def predict(request: Request, req: PredictionRequest, response: Response, db: Session = Depends(get_db)):
-    # 1. Get Best Model for Dataset
-    job = db.query(TrainingJob).filter(
+    # 1. Get Best Model (is_active=True primary, fallback to max roc_auc)
+    active_job = db.query(TrainingJob).filter(
+        TrainingJob.dataset_id == req.dataset_id,
+        TrainingJob.status == "completed",
+        TrainingJob.is_active == True
+    ).first()
+
+    job = active_job or db.query(TrainingJob).filter(
         TrainingJob.dataset_id == req.dataset_id, 
         TrainingJob.status == "completed"
     ).order_by(TrainingJob.roc_auc.desc()).first()
@@ -168,8 +174,14 @@ def classify_risk(prob: float, threshold: float) -> str:
 @router.post("/batch", response_model=BatchPredictionResponse)
 @limiter.limit("30/minute")
 async def predict_batch(request: Request, req: BatchPredictionRequest, response: Response, db: Session = Depends(get_db)):
-    # 1. Get Best Model for Dataset
-    job = db.query(TrainingJob).filter(
+    # 1. Get Best Model (is_active=True primary, fallback to max roc_auc)
+    active_job = db.query(TrainingJob).filter(
+        TrainingJob.dataset_id == req.dataset_id,
+        TrainingJob.status == "completed",
+        TrainingJob.is_active == True
+    ).first()
+
+    job = active_job or db.query(TrainingJob).filter(
         TrainingJob.dataset_id == req.dataset_id, 
         TrainingJob.status == "completed"
     ).order_by(TrainingJob.roc_auc.desc()).first()
