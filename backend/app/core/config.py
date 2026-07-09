@@ -73,6 +73,7 @@ COMPOSITE_SYNTHESIS_ENABLED: bool = os.getenv("COMPOSITE_SYNTHESIS_ENABLED", "Tr
 ENVIRONMENT: str = os.getenv("ENVIRONMENT", "local")
 DEBUG: bool = os.getenv("DEBUG", "True").lower() == "true"
 API_KEY: str = os.getenv("API_KEY", "test-api-key")
+IS_PRODUCTION: bool = os.getenv("ENV", "development") == "production"
 ALLOWED_ORIGINS: str = os.getenv("ALLOWED_ORIGINS", "*")
 
 # Drift & Auto-Retraining settings
@@ -85,6 +86,14 @@ DB_POOL_SIZE: int = int(os.getenv("DB_POOL_SIZE", "20"))
 DB_MAX_OVERFLOW: int = int(os.getenv("DB_MAX_OVERFLOW", "10"))
 DB_POOL_RECYCLE: int = int(os.getenv("DB_POOL_RECYCLE", "1800"))
 DB_POOL_TIMEOUT: int = int(os.getenv("DB_POOL_TIMEOUT", "15"))
+
+# Training Configuration
+MAX_TRAINING_MINUTES: int = int(os.getenv("MAX_TRAINING_MINUTES", "30"))
+
+ENABLE_DRIFT_SCHEDULER: bool = os.getenv("ENABLE_DRIFT_SCHEDULER", "true").lower() == "true"
+
+import sys
+settings = sys.modules[__name__]
 
 
 
