@@ -3,6 +3,8 @@ from typing import List
 import pandas as pd
 import io
 from datetime import datetime
+import asyncio
+from functools import partial
 import logging
 from sqlalchemy.orm import Session
 
@@ -17,7 +19,7 @@ from ...core.limiter import limiter
 router = APIRouter(prefix="/predict", tags=["prediction"])
 
 @router.post("", response_model=PredictionResponse)
-@limiter.limit("120/minute")
+@limiter.limit("100/minute")
 async def predict(request: Request, req: PredictionRequest, response: Response, db: Session = Depends(get_db)):
     # 1. Get Best Model for Dataset
     job = db.query(TrainingJob).filter(
@@ -81,7 +83,12 @@ async def predict(request: Request, req: PredictionRequest, response: Response, 
     
     try:
         # 5. Predict
-        probabilities = model.predict_proba(input_df)[:, 1]
+        loop = asyncio.get_event_loop()
+        probabilities = await loop.run_in_executor(
+            None,
+            partial(model.predict_proba, input_df)
+        )
+        probabilities = probabilities[:, 1]
         
         results = []
         for i, prob in enumerate(probabilities):
@@ -159,7 +166,7 @@ def classify_risk(prob: float, threshold: float) -> str:
         return "Low"
 
 @router.post("/batch", response_model=BatchPredictionResponse)
-@limiter.limit("20/minute")
+@limiter.limit("30/minute")
 async def predict_batch(request: Request, req: BatchPredictionRequest, response: Response, db: Session = Depends(get_db)):
     # 1. Get Best Model for Dataset
     job = db.query(TrainingJob).filter(
@@ -256,12 +263,21 @@ async def predict_batch(request: Request, req: BatchPredictionRequest, response:
             if c != job.target_column and c.lower() not in ["customerid", "customer_id", "id", "record_id", "uuid", "churn"]
         ]
         
+    # 6. Predict
+    loop = asyncio.get_event_loop()
     try:
-        # 6. Predict
-        probabilities = model.predict_proba(df[feature_cols])[:, 1]
+        probabilities = await loop.run_in_executor(
+            None,
+            partial(model.predict_proba, df[feature_cols])
+        )
+        probabilities = probabilities[:, 1]
     except Exception as e:
         try:
-            probabilities = model.predict_proba(df)[:, 1]
+            probabilities = await loop.run_in_executor(
+                None,
+                partial(model.predict_proba, df)
+            )
+            probabilities = probabilities[:, 1]
         except Exception as fallback_e:
             raise HTTPException(status_code=500, detail=f"Inference failed: {str(fallback_e)}")
 

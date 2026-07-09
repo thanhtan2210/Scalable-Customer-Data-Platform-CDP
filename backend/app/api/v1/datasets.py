@@ -3,6 +3,8 @@ from typing import List, Optional, Dict, Any
 import pandas as pd
 import io
 import uuid
+import os
+import re
 from sqlalchemy.orm import Session
 from ...db.models import Dataset, Profile, TrainingJob
 from ...db.session import get_db # Assuming session manager exists
@@ -17,20 +19,36 @@ from ...core.limiter import limiter
 
 router = APIRouter(prefix="/datasets", tags=["datasets"])
 
+def sanitize_filename(filename: str) -> str:
+    # Bỏ path separators
+    filename = os.path.basename(filename)
+    # Chỉ giữ alphanumeric, dash, underscore, dot
+    filename = re.sub(r'[^\w\-_\.]', '_', filename)
+    # Giới hạn độ dài
+    name, ext = os.path.splitext(filename)
+    name = name[:100]
+    return f"{name}{ext}"
+
 @router.post("/upload", response_model=DatasetResponse)
-@limiter.limit("5/minute")
+@limiter.limit("10/minute")
 async def upload_dataset(
     request: Request,
     background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     db: Session = Depends(get_db)
 ):
+    MAX_FILE_SIZE = int(os.getenv("MAX_UPLOAD_SIZE_MB", "50")) * 1024 * 1024
     content = await file.read()
-    if len(content) > 50 * 1024 * 1024:
-        raise HTTPException(status_code=400, detail="File too large (>50MB)")
+    if len(content) > MAX_FILE_SIZE:
+        raise HTTPException(
+            status_code=413,
+            detail=f"File too large. Max size: {MAX_FILE_SIZE // 1024 // 1024}MB"
+        )
+    
+    safe_name = sanitize_filename(file.filename)
     
     try:
-        result = parse_file(content=content, filename=file.filename)
+        result = parse_file(content=content, filename=safe_name)
     except Exception as e:
          raise HTTPException(status_code=400, detail=str(e))
 
@@ -41,13 +59,13 @@ async def upload_dataset(
 
     if requires_sheet_selection:
         # Store raw Excel file to R2
-        r2_path = f"raw/{user_id}/{dataset_id}/{file.filename}"
+        r2_path = f"raw/{user_id}/{dataset_id}/{safe_name}"
         storage.upload_file(content, r2_path)
 
         new_dataset = Dataset(
             id=dataset_id,
             user_id=user_id,
-            filename=file.filename,
+            filename=safe_name,
             r2_path=r2_path,
             row_count=None,
             col_count=None,
@@ -75,15 +93,15 @@ async def upload_dataset(
     # Save to R2 - keep CSV/Parquet as raw, convert other formats to Parquet for downstream compatibility
     if result.detected_format == "csv":
         upload_content = content
-        filename_to_save = file.filename
+        filename_to_save = safe_name
     elif result.detected_format == "parquet":
         upload_content = content
-        filename_to_save = file.filename
+        filename_to_save = safe_name
     else:
         pq_buffer = io.BytesIO()
         df.to_parquet(pq_buffer, index=False)
         upload_content = pq_buffer.getvalue()
-        filename_to_save = f"{file.filename.split('.')[0]}.parquet"
+        filename_to_save = f"{safe_name.split('.')[0]}.parquet"
 
     r2_path = f"raw/{user_id}/{dataset_id}/{filename_to_save}"
     storage.upload_file(upload_content, r2_path)
@@ -112,7 +130,7 @@ async def upload_dataset(
     }
 
 @router.post("/{dataset_id}/profile", response_model=ProfilingResponse)
-@limiter.limit("5/minute")
+@limiter.limit("20/minute")
 async def profile_dataset(request: Request, dataset_id: str, db: Session = Depends(get_db)):
     dataset = db.query(Dataset).filter(Dataset.id == dataset_id).first()
     if not dataset:
