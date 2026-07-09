@@ -30,33 +30,64 @@ class ModelCache:
         except Exception:
             return "sklearn"
 
-    def get_model(self, cache_key: str):
-        """Trả về (model, model_type) tuple."""
+    def _is_expired(self, entry: Any) -> bool:
+        if not isinstance(entry, dict):
+            return False
+        loaded_at = entry.get("loaded_at")
+        if loaded_at is None or loaded_at == 0:
+            return False
+        import time
+        return (time.time() - loaded_at) > self.ttl.total_seconds()
+
+    def get_or_load(self, cache_key: str, model_uri: str) -> Tuple[Any, str]:
+        """Tải mô hình sử dụng Double-Checked Locking để tránh race condition."""
+        # 1. Check ngoài lock (fast path)
+        if cache_key in self._models:
+            entry = self._models[cache_key]
+            if not self._is_expired(entry):
+                if isinstance(entry, dict):
+                    return entry["model"], entry["model_type"]
+                return entry, "sklearn"
+
+        # 2. Acquire lock (slow path)
         with self._lock:
+            # Check lại trong lock (tránh double-load)
             if cache_key in self._models:
                 entry = self._models[cache_key]
+                if not self._is_expired(entry):
+                    if isinstance(entry, dict):
+                        return entry["model"], entry["model_type"]
+                    return entry, "sklearn"
+
+            logger.info(f"📥 Loading model from registry: {model_uri}")
+            model = mlflow.sklearn.load_model(model_uri)
+            model_type = self._detect_model_type(model)
+            
+            import time
+            self._models[cache_key] = {
+                "model": model,
+                "model_type": model_type,
+                "loaded_at": time.time(),
+                "model_uri": model_uri
+            }
+            self._last_loaded[cache_key] = datetime.utcnow()
+            return model, model_type
+
+    def get_model(self, cache_key: str):
+        """Trả về (model, model_type) tuple."""
+        if cache_key in self._models:
+            entry = self._models[cache_key]
+            if not self._is_expired(entry):
                 if isinstance(entry, dict):
                     return (entry["model"],
                             entry["model_type"])
                 else:
                     # Backward compat với cache cũ
                     return (entry, "sklearn")
-            return None, None
+        return None, None
 
     def load_model(self, model_uri: str, cache_key: str):
-        with self._lock:
-            logger.info(f"📥 Loading model from registry: {model_uri}")
-            model = mlflow.sklearn.load_model(model_uri)
-            model_type = self._detect_model_type(model)
-            
-            self._models[cache_key] = {
-                "model": model,
-                "model_type": model_type,
-                "loaded_at": datetime.utcnow().timestamp(),
-                "model_uri": model_uri
-            }
-            self._last_loaded[cache_key] = datetime.utcnow()
-            return model, model_type
+        return self.get_or_load(cache_key, model_uri)
 
     def invalidate(self,
                    dataset_id: str = None,
