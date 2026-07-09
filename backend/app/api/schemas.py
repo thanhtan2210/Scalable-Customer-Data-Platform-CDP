@@ -1,6 +1,6 @@
 # pyrefly: ignore [missing-import]
 from pydantic import BaseModel, Field
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, Literal
 from datetime import datetime
 from ..core.profiler.column_profile import ColumnProfile
 from ..core.profiler.target_analysis import CompositeTargetConfig, SynthesisStrategy, CandidateTarget, ChurnColumnGroupItem
@@ -123,3 +123,34 @@ class DriftResponse(BaseModel):
     target_rows: int
     drift_detected: bool
     metrics: Dict[str, FeatureDriftResult]
+
+class ModelVersionInfo(BaseModel):
+    job_id: str
+    model_uri: str
+    model_class: Optional[str] = None
+    target_col: str
+    roc_auc: Optional[float] = None
+    optimal_threshold: Optional[float] = None
+    created_at: datetime
+    status: str
+    is_active: bool
+    tags: dict = {}
+
+class ModelListResponse(BaseModel):
+    dataset_id: str
+    total: int
+    models: List[ModelVersionInfo]
+
+class PromoteModelRequest(BaseModel):
+    job_id: str
+
+class PromoteModelResponse(BaseModel):
+    promoted_job_id: str
+    previous_active: Optional[str] = None
+    dataset_id: str
+
+class ModelCompareResponse(BaseModel):
+    model_a: ModelVersionInfo
+    model_b: ModelVersionInfo
+    winner: Literal["a", "b", "tie"]
+    delta_roc_auc: float

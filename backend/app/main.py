@@ -2,7 +2,7 @@ from fastapi import FastAPI, Security, HTTPException, status, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security.api_key import APIKeyHeader
 from datetime import datetime
-from .api.v1 import datasets, predict, jobs, monitoring
+from .api.v1 import datasets, predict, jobs, monitoring, models
 from .core.serving.ab_service import router as ab_router
 from .core.config import ENVIRONMENT, API_KEY, ALLOWED_ORIGINS
 from .core.logging_config import setup_logging
@@ -105,6 +105,7 @@ app.include_router(jobs.router, prefix="/api/v1", dependencies=[Depends(get_api_
 app.include_router(predict.router, prefix="/api/v1", dependencies=[Depends(get_api_key)])
 app.include_router(monitoring.router, prefix="/api/v1", dependencies=[Depends(get_api_key)])
 app.include_router(ab_router, prefix="/api/v1", dependencies=[Depends(get_api_key)])
+app.include_router(models.router, prefix="/api/v1", dependencies=[Depends(get_api_key)])
 
 @app.get("/")
 def home():
