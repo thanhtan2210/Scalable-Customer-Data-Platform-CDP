@@ -20,7 +20,7 @@ from ...core.limiter import limiter
 
 router = APIRouter(prefix="/jobs", tags=["jobs"])
 
-async def training_task(
+def run_training_sync(
     job_id: str,
     dataset_id: str,
     target: str,
@@ -30,24 +30,19 @@ async def training_task(
 ):
     db_session = SessionLocal()
     try:
-        # 1. Update status to training
-        job = db_session.query(TrainingJob).filter(TrainingJob.id == job_id).first()
-        if job:
-            job.status = "training"
+        # Load Data
         dataset = db_session.query(Dataset).filter(Dataset.id == dataset_id).first()
-        if dataset:
-            dataset.status = "training"
-        db_session.commit()
-
-        # 2. Load Data
+        if not dataset:
+            raise ValueError("Dataset not found")
+            
         content = storage.download_file(dataset.r2_path)
         result = parse_file(content=content, filename=dataset.filename)
         df = result.df
 
-        # 3. Reconstruct ColumnProfile objects from dict
+        # Reconstruct ColumnProfile objects from dict
         confirmed_profiles = [ColumnProfile(**p) for p in profiles_dict]
 
-        # 4. Run AutoML
+        # Run AutoML
         model_uri, _schema_path = run_automl(
             df,
             confirmed_profiles,
@@ -57,7 +52,7 @@ async def training_task(
             prior_model_uri=prior_model_uri,
         )
 
-        # 5. Generate and Save Schema (FIX)
+        # Generate and Save Schema
         try:
             from ...core.pipeline.schema_gen import generate_schema, save_schema
             schema, metadata = generate_schema(confirmed_profiles, dataset_id, target)
@@ -89,7 +84,7 @@ async def training_task(
             except Exception as ex:
                 logger.error(f"Failed to fetch metric from MLflow: {ex}")
 
-        # 6. Update Job
+        # Update Job and Dataset
         job = db_session.query(TrainingJob).filter(TrainingJob.id == job_id).first()
         dataset = db_session.query(Dataset).filter(Dataset.id == dataset_id).first()
         if job:
@@ -105,7 +100,7 @@ async def training_task(
             dataset.status = "completed"
         db_session.commit()
 
-        # Sau khi update job status:
+        # Invalidate Cache
         try:
             from app.core.serving.model_loader import model_cache
         except ImportError:
@@ -113,25 +108,90 @@ async def training_task(
             
         invalidated = model_cache.invalidate(dataset_id=dataset_id)
         logger.info(f"Cache invalidated {invalidated} entries for dataset {dataset_id}")
+    finally:
+        db_session.close()
+
+import os
+import asyncio
+
+async def training_task(
+    job_id: str,
+    dataset_id: str,
+    target: str,
+    profiles_dict: list,
+    composite_config: Optional[CompositeTargetConfig] = None,
+    prior_model_uri: Optional[str] = None,
+):
+    db_session = SessionLocal()
+    try:
+        # 1. Update status to training and started_at
+        job = db_session.query(TrainingJob).filter(TrainingJob.id == job_id).first()
+        if job:
+            job.status = "training"
+            job.started_at = datetime.utcnow()
+        dataset = db_session.query(Dataset).filter(Dataset.id == dataset_id).first()
+        if dataset:
+            dataset.status = "training"
+        db_session.commit()
     except Exception as e:
+        logger.error(f"Failed to initialize job training status: {e}")
+    finally:
+        db_session.close()
+
+    MAX_TRAINING_MINUTES = int(os.getenv("MAX_TRAINING_MINUTES", "30"))
+
+    try:
+        # Wrap with timeout
+        await asyncio.wait_for(
+            asyncio.to_thread(
+                run_training_sync,
+                job_id,
+                dataset_id,
+                target,
+                profiles_dict,
+                composite_config,
+                prior_model_uri
+            ),
+            timeout=MAX_TRAINING_MINUTES * 60
+        )
+    except asyncio.TimeoutError:
+        db_session = SessionLocal()
+        try:
+            job = db_session.query(TrainingJob).filter(TrainingJob.id == job_id).first()
+            if job:
+                job.status = "failed"
+                job.error_message = f"Training timeout after {MAX_TRAINING_MINUTES} minutes"
+                job.finished_at = datetime.utcnow()
+            dataset = db_session.query(Dataset).filter(Dataset.id == dataset_id).first()
+            if dataset:
+                dataset.status = "failed"
+            db_session.commit()
+        except Exception as db_ex:
+            logger.error(f"Failed to save timeout status to DB: {db_ex}")
+        finally:
+            db_session.close()
+        logger.error(f"Job {job_id} timed out after {MAX_TRAINING_MINUTES} minutes")
+    except Exception as e:
+        db_session = SessionLocal()
         try:
             job = db_session.query(TrainingJob).filter(TrainingJob.id == job_id).first()
             if job and job.status != "failed":
                 job.status = "failed"
-                job.error_message = str(e)
+                job.error_message = str(e)[:500]
+                job.finished_at = datetime.utcnow()
             dataset = db_session.query(Dataset).filter(Dataset.id == dataset_id).first()
             if dataset and dataset.status != "failed":
                 dataset.status = "failed"
             db_session.commit()
-        except Exception as commit_ex:
-            logger.error(f"Failed to save failure status to DB: {commit_ex}")
-        logger.error(f"Training Failed for {job_id}: {str(e)}")
-    finally:
-        db_session.close()
+        except Exception as db_ex:
+            logger.error(f"Failed to save failure status to DB: {db_ex}")
+        finally:
+            db_session.close()
+        logger.error(f"Job {job_id} failed: {e}")
 
 
 @router.post("/datasets/{dataset_id}/train", response_model=JobResponse)
-@limiter.limit("2/minute")
+@limiter.limit("5/minute")
 async def start_training(
     request: Request,
     dataset_id: str, 

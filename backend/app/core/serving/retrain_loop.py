@@ -1,13 +1,45 @@
 import asyncio
 import logging
 import httpx
-from datetime import datetime
+from datetime import datetime, timedelta
+import os
 
 from ...core import config
 from ...db.session import SessionLocal
 from ...db.models import TrainingJob
 
 logger = logging.getLogger("cdp.retrain_loop")
+
+async def cleanup_old_inference_files():
+    """Xóa inference parquet files cũ hơn INFERENCE_RETENTION_DAYS ngày."""
+    try:
+        from ...core.storage import storage
+        INFERENCE_RETENTION_DAYS = int(os.getenv("INFERENCE_RETENTION_DAYS", "30"))
+        cutoff = datetime.utcnow() - timedelta(days=INFERENCE_RETENTION_DAYS)
+
+        # List tất cả inference files
+        all_files = storage.list_files("ml_artifacts/")
+        inference_files = [f for f in all_files if "/inference/" in f]
+
+        deleted = 0
+        for file_path in inference_files:
+            try:
+                # Parse date từ path:
+                # ml_artifacts/{id}/inference/{YYYY-MM-DD}/{batch_id}.parquet
+                date_str = file_path.split("/inference/")[1].split("/")[0]
+                file_date = datetime.strptime(date_str, "%Y-%m-%d")
+                if file_date < cutoff:
+                    storage.delete_file(file_path)
+                    deleted += 1
+            except (ValueError, IndexError):
+                continue  # skip malformed paths
+
+        if deleted > 0:
+            logger.info(
+                f"Cleaned up {deleted} inference files older than {INFERENCE_RETENTION_DAYS} days"
+            )
+    except Exception as e:
+        logger.error(f"Inference cleanup failed: {e}")
 
 async def run_drift_check_loop():
     logger.info("Drift auto-retrain loop started.")
@@ -70,6 +102,9 @@ async def run_drift_check_loop():
                             logger.error(f"Drift check API error for {ds_id}: {resp.status_code} - {resp.text}")
                     except Exception as api_err:
                         logger.error(f"Error calling drift API for dataset {ds_id}: {api_err}")
+            
+            # Run old inference files cleanup
+            await cleanup_old_inference_files()
                         
         except Exception as loop_err:
             logger.error(f"Error in drift check loop iteration: {loop_err}")
