@@ -111,6 +111,21 @@ class StorageClient:
                 else:
                     full_path.unlink()
 
+    def delete_file(self, path: str) -> bool:
+        path = path.lstrip("/")
+        if self.mode == "local":
+            full_path = (self.local_base_path / path).resolve()
+            if full_path.exists():
+                os.remove(full_path)
+                return True
+            return False
+        else:
+            self.s3.delete_object(
+                Bucket=self.bucket,
+                Key=path
+            )
+            return True
+
     def ping(self) -> bool:
         if self.mode == "local":
             return self.local_base_path.exists()
