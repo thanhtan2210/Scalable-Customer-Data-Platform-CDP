@@ -10,6 +10,9 @@ from .core.logging_config import setup_logging
 # Initialize Logging
 setup_logging()
 
+import logging
+logger = logging.getLogger("cdp.main")
+
 # Enforce security check: prevent starting in production with the default API key
 if ENVIRONMENT == "production" and API_KEY == "test-api-key":
     raise RuntimeError(
@@ -17,41 +20,73 @@ if ENVIRONMENT == "production" and API_KEY == "test-api-key":
     )
 
 import asyncio
+import os
 from contextlib import asynccontextmanager
 from .core import config
 from .core.serving.retrain_loop import run_drift_check_loop
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # startup
-    from .db.session import engine
-    from .db.models import Base
-    Base.metadata.create_all(bind=engine)
-    
+    # Auto-run migrations on startup
+    try:
+        from alembic.config import Config
+        from alembic import command
+        alembic_cfg = Config("alembic.ini")
+        command.upgrade(alembic_cfg, "head")
+        logger.info("Database migrations: up to date")
+    except Exception as e:
+        logger.error(f"Migration failed: {e}")
+        # Không raise — app vẫn start nhưng log warning rõ ràng
+
     task = None
-    if config.DRIFT_AUTO_RETRAIN:
+    if config.DRIFT_AUTO_RETRAIN and config.ENABLE_DRIFT_SCHEDULER:
         task = asyncio.create_task(run_drift_check_loop())
+        logger.info("Drift scheduler started on this instance")
+    elif config.DRIFT_AUTO_RETRAIN:
+        logger.warning(
+            "DRIFT_AUTO_RETRAIN=true but ENABLE_DRIFT_SCHEDULER=false — "
+            "drift checks disabled on this instance (multi-instance mode)"
+        )
     yield
     # shutdown
     if task:
         task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
 
-app = FastAPI(title="Churn Prediction Platform API", lifespan=lifespan)
+from .core.config import IS_PRODUCTION
+
+app = FastAPI(
+    title="Churn Prediction Platform API",
+    lifespan=lifespan,
+    docs_url="/docs" if not IS_PRODUCTION else None,
+    redoc_url="/redoc" if not IS_PRODUCTION else None,
+    openapi_url="/openapi.json" if not IS_PRODUCTION else None
+)
+
+# Register request logging middleware
+from .middleware.logging_middleware import logging_middleware
+app.middleware("http")(logging_middleware)
 
 from .core.limiter import limiter
 from slowapi.errors import RateLimitExceeded
 from slowapi import _rate_limit_exceeded_handler
+from slowapi.middleware import SlowAPIMiddleware
 
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+app.add_middleware(SlowAPIMiddleware)
 
 # Configure CORS Middleware
-origins = [o.strip() for o in ALLOWED_ORIGINS.split(",") if o.strip()]
+allowed_origins_str = os.getenv("ALLOWED_ORIGINS", "http://localhost:3000")
+allowed_origins = [o.strip() for o in allowed_origins_str.split(",") if o.strip()]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,
+    allow_origins=allowed_origins,
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE"],
     allow_headers=["*"],
 )
 
