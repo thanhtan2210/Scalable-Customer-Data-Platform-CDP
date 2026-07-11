@@ -4,6 +4,7 @@
 # --- TESTING ---
 pytest
 pytest-cov
+hypothesis          # property-based testing (tests/phase1/test_synthesizer_properties.py)
 httpx  # Required by FastAPI TestClient
 
 # --- LINTING & FORMATTING ---
