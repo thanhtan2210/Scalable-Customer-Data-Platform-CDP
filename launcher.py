@@ -84,9 +84,32 @@ def run_dashboard():
 
 def run_pipeline():
     """Execute the full data pipeline."""
-    print("⚙️ Running Entire Data Pipeline (Pandas fallback)...")
-    from backend.jobs.jobs.clean_data import run_job
-    run_job()
+    print("⚙️ Running Entire Data Pipeline (Comprehensive Pandas ETL)...")
+    from backend.app.core.etl.main import run_pipeline as run_etl
+    import os
+    
+    input_csv = os.path.join("data", "raw", "cleaned_telco.csv")
+    out_dir = os.path.join("data", "parquet", "processed")
+    
+    if not os.path.exists(input_csv):
+        print(f"❌ Input file not found: {input_csv}")
+        return
+        
+    print(f"📥 Loading input raw data: {input_csv}")
+    print(f"💾 Saving processed parquet to: {out_dir}")
+    
+    try:
+        df_processed = run_etl(
+            input_csv=input_csv,
+            out_dir=out_dir,
+            mode="full",
+            validate=True,
+            track_lineage=True,
+            track_metrics=True
+        )
+        print(f"✅ Pipeline executed successfully. Processed {len(df_processed)} rows.")
+    except Exception as e:
+        print(f"❌ Pipeline execution failed: {e}")
 
 
 def run_train():
