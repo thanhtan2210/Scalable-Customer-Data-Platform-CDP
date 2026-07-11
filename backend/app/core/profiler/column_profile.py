@@ -2,6 +2,7 @@ from enum import Enum
 from typing import Optional
 from pydantic import BaseModel, Field
 
+
 class DataRole(str, Enum):
     ID = "ID"
     TARGET = "TARGET"
@@ -10,6 +11,7 @@ class DataRole(str, Enum):
     DATETIME = "DATETIME"
     TEXT = "TEXT"
     IGNORE = "IGNORE"
+
 
 class ColumnProfile(BaseModel):
     name: str
@@ -23,7 +25,7 @@ class ColumnProfile(BaseModel):
     regex_pattern: Optional[str] = None
     potential_leakage: bool = False
     leakage_score: Optional[float] = None
-    
+
     # New fields for Phase 2 integration
     transform_strategy: Optional[str] = None
     impute_strategy: Optional[str] = None

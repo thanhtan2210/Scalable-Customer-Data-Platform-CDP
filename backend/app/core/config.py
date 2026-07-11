@@ -37,7 +37,9 @@ AWS_SECRET_ACCESS_KEY: str = os.getenv("AWS_SECRET_ACCESS_KEY", S3_SECRET_ACCESS
 # MLflow Tracking Configuration
 MLFLOW_TRACKING_URI: str = os.getenv("MLFLOW_TRACKING_URI", "http://localhost:5000")
 MLFLOW_TRACKING_USERNAME: str | None = os.getenv("MLFLOW_TRACKING_USERNAME")
-MLFLOW_TRACKING_PASSWORD: str | None = os.getenv("MLFLOW_TRACKING_PASSWORD") # DagsHub Token
+MLFLOW_TRACKING_PASSWORD: str | None = os.getenv(
+    "MLFLOW_TRACKING_PASSWORD"
+)  # DagsHub Token
 
 # Database Configuration (Supabase / PostgreSQL)
 DATABASE_URL: str = os.getenv("DATABASE_URL", "sqlite:///./test.db")
@@ -67,7 +69,9 @@ ENTROPY_SCORE_HIGH: float = float(os.getenv("ENTROPY_SCORE_HIGH", "0.8"))
 CPI_MIN_COLUMNS: int = int(os.getenv("CPI_MIN_COLUMNS", "2"))
 CPI_VARIANCE_THRESHOLD: float = float(os.getenv("CPI_VARIANCE_THRESHOLD", "0.8"))
 CPI_AUTO_THRESHOLD: int = int(os.getenv("CPI_AUTO_THRESHOLD", "2"))
-COMPOSITE_SYNTHESIS_ENABLED: bool = os.getenv("COMPOSITE_SYNTHESIS_ENABLED", "True").lower() == "true"
+COMPOSITE_SYNTHESIS_ENABLED: bool = (
+    os.getenv("COMPOSITE_SYNTHESIS_ENABLED", "True").lower() == "true"
+)
 
 # App & Environment settings
 ENVIRONMENT: str = os.getenv("ENVIRONMENT", "local")
@@ -90,10 +94,10 @@ DB_POOL_TIMEOUT: int = int(os.getenv("DB_POOL_TIMEOUT", "15"))
 # Training Configuration
 MAX_TRAINING_MINUTES: int = int(os.getenv("MAX_TRAINING_MINUTES", "30"))
 
-ENABLE_DRIFT_SCHEDULER: bool = os.getenv("ENABLE_DRIFT_SCHEDULER", "true").lower() == "true"
+ENABLE_DRIFT_SCHEDULER: bool = (
+    os.getenv("ENABLE_DRIFT_SCHEDULER", "true").lower() == "true"
+)
 
 import sys
+
 settings = sys.modules[__name__]
-
-
-

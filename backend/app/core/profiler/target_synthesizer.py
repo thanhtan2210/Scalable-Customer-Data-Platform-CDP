@@ -4,20 +4,19 @@ from typing import Tuple, List, Optional
 from sklearn.decomposition import PCA
 from scipy import stats
 
-from ..config import (
-    CPI_MIN_COLUMNS,
-    CPI_VARIANCE_THRESHOLD,
-    CPI_AUTO_THRESHOLD
-)
+from ..config import CPI_MIN_COLUMNS, CPI_VARIANCE_THRESHOLD, CPI_AUTO_THRESHOLD
 from .target_analysis import (
     CompositeTargetConfig,
     ColumnWeight,
     SynthesisStrategy,
     ChurnColumnGroupItem,
-    GroupRole
+    GroupRole,
 )
 
-def _get_numeric_columns(df: pd.DataFrame, eligible: List[ChurnColumnGroupItem]) -> List[str]:
+
+def _get_numeric_columns(
+    df: pd.DataFrame, eligible: List[ChurnColumnGroupItem]
+) -> List[str]:
     numeric_cols = []
     for c in eligible:
         if c.name in df.columns:
@@ -25,7 +24,10 @@ def _get_numeric_columns(df: pd.DataFrame, eligible: List[ChurnColumnGroupItem])
                 numeric_cols.append(c.name)
     return numeric_cols
 
-def _pca_synthesis(df: pd.DataFrame, cols: List[str], recommended_target: str) -> Tuple[float, pd.Series]:
+
+def _pca_synthesis(
+    df: pd.DataFrame, cols: List[str], recommended_target: str
+) -> Tuple[float, pd.Series]:
     X = np.zeros((len(df), len(cols)))
     for i, col in enumerate(cols):
         series = df[col]
@@ -60,12 +62,17 @@ def _pca_synthesis(df: pd.DataFrame, cols: List[str], recommended_target: str) -
         else:
             target_encoded = target_series.fillna(0).values
 
-        if len(target_encoded) > 1 and np.std(target_encoded) > 0 and np.std(cpi_scaled) > 0:
+        if (
+            len(target_encoded) > 1
+            and np.std(target_encoded) > 0
+            and np.std(cpi_scaled) > 0
+        ):
             corr = np.corrcoef(cpi_scaled, target_encoded)[0, 1]
             if not np.isnan(corr) and corr < 0:
                 cpi_scaled = 1.0 - cpi_scaled
 
     return variance_explained, pd.Series(cpi_scaled, index=df.index)
+
 
 def _weighted_synthesis(df: pd.DataFrame, weights: List[ColumnWeight]) -> pd.Series:
     weighted_sum = np.zeros(len(df))
@@ -131,7 +138,10 @@ def _weighted_synthesis(df: pd.DataFrame, weights: List[ColumnWeight]) -> pd.Ser
 
     return pd.Series(cpi, index=df.index)
 
-def _auto_assign_weights(eligible: List[ChurnColumnGroupItem], df: pd.DataFrame) -> List[ColumnWeight]:
+
+def _auto_assign_weights(
+    eligible: List[ChurnColumnGroupItem], df: pd.DataFrame
+) -> List[ColumnWeight]:
     weights = []
     for c in eligible:
         col = c.name
@@ -144,31 +154,38 @@ def _auto_assign_weights(eligible: List[ChurnColumnGroupItem], df: pd.DataFrame)
         else:
             normalize_method = "minmax"
 
-        weights.append(ColumnWeight(
-            name=col,
-            weight=float(c.correlation_with_target),
-            normalize_method=normalize_method
-        ))
+        weights.append(
+            ColumnWeight(
+                name=col,
+                weight=float(c.correlation_with_target),
+                normalize_method=normalize_method,
+            )
+        )
     return weights
+
 
 def synthesize_target(
     df: pd.DataFrame,
     churn_column_group: List[ChurnColumnGroupItem],
-    recommended_target: str
+    recommended_target: str,
 ) -> Tuple[CompositeTargetConfig, Optional[pd.Series]]:
     # 1. Filter eligible columns (exclude PRIMARY, LEAKAGE_SUSPECT)
     eligible = [
-        c for c in churn_column_group
+        c
+        for c in churn_column_group
         if c.group_role in (GroupRole.AUXILIARY, GroupRole.DUPLICATE)
         and c.name != recommended_target
     ]
 
     if not eligible:
-        return CompositeTargetConfig(
-            strategy=SynthesisStrategy.NONE,
-            source_columns=[],
-            requires_confirmation=False
-        ), None
+        return (
+            CompositeTargetConfig(
+                strategy=SynthesisStrategy.NONE,
+                source_columns=[],
+                requires_confirmation=False,
+            ),
+            None,
+        )
 
     # 2. Select strategy
     numeric_cols = _get_numeric_columns(df, eligible)
@@ -200,7 +217,7 @@ def synthesize_target(
         source_columns=[c.name for c in eligible],
         cpi_variance_explained=variance,
         weights=weights,
-        requires_confirmation=not auto
+        requires_confirmation=not auto,
     )
 
     # 4. Return CPI only if auto-synthesized

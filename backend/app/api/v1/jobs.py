@@ -20,6 +20,7 @@ from ...core.limiter import limiter
 
 router = APIRouter(prefix="/jobs", tags=["jobs"])
 
+
 def run_training_sync(
     job_id: str,
     dataset_id: str,
@@ -34,7 +35,7 @@ def run_training_sync(
         dataset = db_session.query(Dataset).filter(Dataset.id == dataset_id).first()
         if not dataset:
             raise ValueError("Dataset not found")
-            
+
         content = storage.download_file(dataset.r2_path)
         result = parse_file(content=content, filename=dataset.filename)
         df = result.df
@@ -55,6 +56,7 @@ def run_training_sync(
         # Generate and Save Schema
         try:
             from ...core.pipeline.schema_gen import generate_schema, save_schema
+
             schema, metadata = generate_schema(confirmed_profiles, dataset_id, target)
             save_schema(schema, metadata, dataset_id, target)
         except Exception as schema_ex:
@@ -71,6 +73,7 @@ def run_training_sync(
         # Extract metrics from MLflow
         import re
         import mlflow
+
         best_roc_auc = None
         optimal_threshold = None
         match = re.search(r"runs:/+([^/]+)", model_uri)
@@ -105,14 +108,16 @@ def run_training_sync(
             from app.core.serving.model_loader import model_cache
         except ImportError:
             from backend.app.core.serving.model_loader import model_cache
-            
+
         invalidated = model_cache.invalidate(dataset_id=dataset_id)
         logger.info(f"Cache invalidated {invalidated} entries for dataset {dataset_id}")
     finally:
         db_session.close()
 
+
 import os
 import asyncio
+
 
 async def training_task(
     job_id: str,
@@ -150,9 +155,9 @@ async def training_task(
                 target,
                 profiles_dict,
                 composite_config,
-                prior_model_uri
+                prior_model_uri,
             ),
-            timeout=MAX_TRAINING_MINUTES * 60
+            timeout=MAX_TRAINING_MINUTES * 60,
         )
     except asyncio.TimeoutError:
         db_session = SessionLocal()
@@ -160,7 +165,9 @@ async def training_task(
             job = db_session.query(TrainingJob).filter(TrainingJob.id == job_id).first()
             if job:
                 job.status = "failed"
-                job.error_message = f"Training timeout after {MAX_TRAINING_MINUTES} minutes"
+                job.error_message = (
+                    f"Training timeout after {MAX_TRAINING_MINUTES} minutes"
+                )
                 job.finished_at = datetime.utcnow()
             dataset = db_session.query(Dataset).filter(Dataset.id == dataset_id).first()
             if dataset:
@@ -194,47 +201,58 @@ async def training_task(
 @limiter.limit("5/minute")
 async def start_training(
     request: Request,
-    dataset_id: str, 
-    req: TrainingRequest, 
+    dataset_id: str,
+    req: TrainingRequest,
     background_tasks: BackgroundTasks,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
     dataset = db.query(Dataset).filter(Dataset.id == dataset_id).first()
     if not dataset:
         raise HTTPException(status_code=404, detail="Dataset not found")
-        
+
     # Validate confirmed_target exists in dataset
     try:
         content = storage.download_file(dataset.r2_path)
     except Exception as e:
-        raise HTTPException(status_code=404, detail=f"File not found in storage: {str(e)}")
-        
+        raise HTTPException(
+            status_code=404, detail=f"File not found in storage: {str(e)}"
+        )
+
     try:
         result = parse_file(content=content, filename=dataset.filename)
         df = result.df
     except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Failed to parse dataset file: {str(e)}")
-        
+        raise HTTPException(
+            status_code=400, detail=f"Failed to parse dataset file: {str(e)}"
+        )
+
     if df is None:
         raise HTTPException(status_code=400, detail="Failed to parse dataset dataframe")
-        
+
     if req.confirmed_target not in df.columns:
-        raise HTTPException(status_code=400, detail=f"Confirmed target '{req.confirmed_target}' not found in dataset columns")
-    
+        raise HTTPException(
+            status_code=400,
+            detail=f"Confirmed target '{req.confirmed_target}' not found in dataset columns",
+        )
+
     # Idempotency check
-    existing_job = db.query(TrainingJob).filter(
-        TrainingJob.dataset_id == dataset_id,
-        TrainingJob.target_column == req.confirmed_target,
-        TrainingJob.status == "completed",
-        TrainingJob.roc_auc > 0.65,
-        TrainingJob.prior_model_uri == req.prior_model_uri
-    ).first()
-    
+    existing_job = (
+        db.query(TrainingJob)
+        .filter(
+            TrainingJob.dataset_id == dataset_id,
+            TrainingJob.target_column == req.confirmed_target,
+            TrainingJob.status == "completed",
+            TrainingJob.roc_auc > 0.65,
+            TrainingJob.prior_model_uri == req.prior_model_uri,
+        )
+        .first()
+    )
+
     if existing_job:
         return {
             "job_id": existing_job.id,
             "status": "completed",
-            "estimated_minutes": 0
+            "estimated_minutes": 0,
         }
 
     # Create Job with status="queued"
@@ -244,7 +262,7 @@ async def start_training(
         dataset_id=dataset_id,
         status="queued",
         target_column=req.confirmed_target,
-        prior_model_uri=req.prior_model_uri
+        prior_model_uri=req.prior_model_uri,
     )
     db.add(new_job)
     dataset.status = "queued"
@@ -261,23 +279,20 @@ async def start_training(
         req.prior_model_uri,
     )
 
-    return {
-        "job_id": job_id,
-        "status": "queued",
-        "estimated_minutes": 5
-    }
+    return {"job_id": job_id, "status": "queued", "estimated_minutes": 5}
+
 
 @router.get("/{job_id}/status", response_model=JobStatusResponse)
 async def get_job_status(job_id: str, db: Session = Depends(get_db)):
     job = db.query(TrainingJob).filter(TrainingJob.id == job_id).first()
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
-    
+
     return {
         "job_id": job.id,
         "status": job.status,
         "roc_auc": job.roc_auc,
         "model_uri": job.model_uri,
         "optimal_threshold": job.optimal_threshold,
-        "finished_at": job.finished_at
+        "finished_at": job.finished_at,
     }
