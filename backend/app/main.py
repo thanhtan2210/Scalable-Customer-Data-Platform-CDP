@@ -11,6 +11,7 @@ from .core.logging_config import setup_logging
 setup_logging()
 
 import logging
+
 logger = logging.getLogger("cdp.main")
 
 # Enforce security check: prevent starting in production with the default API key
@@ -25,12 +26,14 @@ from contextlib import asynccontextmanager
 from .core import config
 from .core.serving.retrain_loop import run_drift_check_loop
 
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Auto-run migrations on startup
     try:
         from alembic.config import Config
         from alembic import command
+
         alembic_cfg = Config("alembic.ini")
         command.upgrade(alembic_cfg, "head")
         logger.info("Database migrations: up to date")
@@ -56,6 +59,7 @@ async def lifespan(app: FastAPI):
         except asyncio.CancelledError:
             pass
 
+
 from .core.config import IS_PRODUCTION
 
 app = FastAPI(
@@ -63,11 +67,12 @@ app = FastAPI(
     lifespan=lifespan,
     docs_url="/docs" if not IS_PRODUCTION else None,
     redoc_url="/redoc" if not IS_PRODUCTION else None,
-    openapi_url="/openapi.json" if not IS_PRODUCTION else None
+    openapi_url="/openapi.json" if not IS_PRODUCTION else None,
 )
 
 # Register request logging middleware
 from .middleware.logging_middleware import logging_middleware
+
 app.middleware("http")(logging_middleware)
 
 from .core.limiter import limiter
@@ -92,6 +97,7 @@ app.add_middleware(
 
 api_key_header = APIKeyHeader(name="X-API-Key")
 
+
 async def get_api_key(api_key: str = Security(api_key_header)):
     if api_key == API_KEY:
         return api_key
@@ -99,19 +105,27 @@ async def get_api_key(api_key: str = Security(api_key_header)):
         status_code=status.HTTP_403_FORBIDDEN, detail="Could not validate credentials"
     )
 
+
 # Apply Auth globally for MVP
-app.include_router(datasets.router, prefix="/api/v1", dependencies=[Depends(get_api_key)])
+app.include_router(
+    datasets.router, prefix="/api/v1", dependencies=[Depends(get_api_key)]
+)
 app.include_router(jobs.router, prefix="/api/v1", dependencies=[Depends(get_api_key)])
-app.include_router(predict.router, prefix="/api/v1", dependencies=[Depends(get_api_key)])
-app.include_router(monitoring.router, prefix="/api/v1", dependencies=[Depends(get_api_key)])
+app.include_router(
+    predict.router, prefix="/api/v1", dependencies=[Depends(get_api_key)]
+)
+app.include_router(
+    monitoring.router, prefix="/api/v1", dependencies=[Depends(get_api_key)]
+)
 app.include_router(ab_router, prefix="/api/v1", dependencies=[Depends(get_api_key)])
 app.include_router(models.router, prefix="/api/v1", dependencies=[Depends(get_api_key)])
+
 
 @app.get("/")
 def home():
     return {"status": "alive", "version": "1.0.0"}
 
+
 @app.get("/health")
 def health_check():
     return {"status": "healthy", "timestamp": datetime.utcnow().isoformat()}
-

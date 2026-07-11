@@ -3,7 +3,10 @@ import pandas as pd
 from scipy import stats
 from typing import Dict, Any, List
 
-def calculate_numerical_psi(reference: np.ndarray, target: np.ndarray, num_bins: int = 10, epsilon: float = 1e-4) -> float:
+
+def calculate_numerical_psi(
+    reference: np.ndarray, target: np.ndarray, num_bins: int = 10, epsilon: float = 1e-4
+) -> float:
     """
     Calculates Population Stability Index (PSI) for numerical values.
     """
@@ -16,7 +19,9 @@ def calculate_numerical_psi(reference: np.ndarray, target: np.ndarray, num_bins:
 
     # Try quantile binning first, fallback to equal-width binning if values are highly skewed (duplicate edges)
     try:
-        _, bins = pd.qcut(reference, q=num_bins, retbins=True, labels=False, duplicates="drop")
+        _, bins = pd.qcut(
+            reference, q=num_bins, retbins=True, labels=False, duplicates="drop"
+        )
     except Exception:
         _, bins = pd.cut(reference, bins=num_bins, retbins=True, labels=False)
 
@@ -40,7 +45,10 @@ def calculate_numerical_psi(reference: np.ndarray, target: np.ndarray, num_bins:
     psi_value = np.sum((target_pct - ref_pct) * np.log(target_pct / ref_pct))
     return float(psi_value)
 
-def calculate_categorical_psi(reference: np.ndarray, target: np.ndarray, epsilon: float = 1e-4) -> float:
+
+def calculate_categorical_psi(
+    reference: np.ndarray, target: np.ndarray, epsilon: float = 1e-4
+) -> float:
     """
     Calculates Population Stability Index (PSI) for categorical values.
     """
@@ -77,6 +85,7 @@ def calculate_categorical_psi(reference: np.ndarray, target: np.ndarray, epsilon
     psi_value = np.sum((target_pct - ref_pct) * np.log(target_pct / ref_pct))
     return float(psi_value)
 
+
 def calculate_categorical_chi2(reference: np.ndarray, target: np.ndarray) -> float:
     """
     Calculates Chi-squared test p-value for categorical values.
@@ -101,7 +110,7 @@ def calculate_categorical_chi2(reference: np.ndarray, target: np.ndarray) -> flo
     obs = []
     for cat in all_categories:
         obs.append([ref_dict.get(cat, 0), target_dict.get(cat, 0)])
-        
+
     obs = np.array(obs).T
     obs = obs.astype(float) + 1e-4
 
@@ -111,12 +120,13 @@ def calculate_categorical_chi2(reference: np.ndarray, target: np.ndarray) -> flo
     except Exception:
         return 1.0
 
+
 def calculate_drift_report(
     reference_df: pd.DataFrame,
     target_df: pd.DataFrame,
     feature_cols: List[str],
     numerical_cols: List[str],
-    categorical_cols: List[str]
+    categorical_cols: List[str],
 ) -> Dict[str, Any]:
     """
     Generates a comprehensive drift report.
@@ -159,7 +169,7 @@ def calculate_drift_report(
                 "ks_p_value": ks_p_value,
                 "psi": psi,
                 "drift_level": drift_level,
-                "is_drifted": is_drifted
+                "is_drifted": is_drifted,
             }
 
         elif col in categorical_cols:
@@ -181,13 +191,10 @@ def calculate_drift_report(
                 "psi": psi,
                 "chi2_p_value": chi2_p_value,
                 "drift_level": drift_level,
-                "is_drifted": is_drifted
+                "is_drifted": is_drifted,
             }
 
         if metrics.get(col, {}).get("is_drifted", False):
             drift_detected = True
 
-    return {
-        "drift_detected": drift_detected,
-        "metrics": metrics
-    }
+    return {"drift_detected": drift_detected, "metrics": metrics}

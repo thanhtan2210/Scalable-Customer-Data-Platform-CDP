@@ -6,6 +6,7 @@ from datetime import datetime, timedelta
 
 logger = logging.getLogger("cdp.serving.model_loader")
 
+
 class ModelCache:
     def __init__(self):
         self._models: Dict[str, Any] = {}
@@ -21,9 +22,9 @@ class ModelCache:
                 from backend.app.core.training.mtl_trainer import MTLChurnModel
             except ImportError:
                 from app.core.training.mtl_trainer import MTLChurnModel
-                
+
             # Kiểm tra step cuối của pipeline
-            last_step = model.steps[-1][1] if hasattr(model, 'steps') else model
+            last_step = model.steps[-1][1] if hasattr(model, "steps") else model
             if isinstance(last_step, MTLChurnModel):
                 return "mtl_sklearn"
             return "sklearn"
@@ -37,6 +38,7 @@ class ModelCache:
         if loaded_at is None or loaded_at == 0:
             return False
         import time
+
         return (time.time() - loaded_at) > self.ttl.total_seconds()
 
     def get_or_load(self, cache_key: str, model_uri: str) -> Tuple[Any, str]:
@@ -62,13 +64,14 @@ class ModelCache:
             logger.info(f"📥 Loading model from registry: {model_uri}")
             model = mlflow.sklearn.load_model(model_uri)
             model_type = self._detect_model_type(model)
-            
+
             import time
+
             self._models[cache_key] = {
                 "model": model,
                 "model_type": model_type,
                 "loaded_at": time.time(),
-                "model_uri": model_uri
+                "model_uri": model_uri,
             }
             self._last_loaded[cache_key] = datetime.utcnow()
             return model, model_type
@@ -79,8 +82,7 @@ class ModelCache:
             entry = self._models[cache_key]
             if not self._is_expired(entry):
                 if isinstance(entry, dict):
-                    return (entry["model"],
-                            entry["model_type"])
+                    return (entry["model"], entry["model_type"])
                 else:
                     # Backward compat với cache cũ
                     return (entry, "sklearn")
@@ -89,9 +91,7 @@ class ModelCache:
     def load_model(self, model_uri: str, cache_key: str):
         return self.get_or_load(cache_key, model_uri)
 
-    def invalidate(self,
-                   dataset_id: str = None,
-                   model_uri: str = None) -> int:
+    def invalidate(self, dataset_id: str = None, model_uri: str = None) -> int:
         """
         Xóa cache entries.
         Trả về số entries đã xóa.
@@ -122,5 +122,6 @@ class ModelCache:
                 self._last_loaded.pop(key, None)
 
             return len(keys_to_delete)
+
 
 model_cache = ModelCache()

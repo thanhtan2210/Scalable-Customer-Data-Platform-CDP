@@ -23,10 +23,12 @@ if config.config_file_name is not None:
 # Add your model's MetaData object for 'autogenerate' support
 import sys
 from pathlib import Path
+
 root_path = Path(__file__).resolve().parents[4]
 sys.path.insert(0, str(root_path))
 
 from backend.app.db.models import Base
+
 target_metadata = Base.metadata
 
 

@@ -11,30 +11,54 @@ from sqlalchemy.orm import Session
 logger = logging.getLogger("cdp.predict")
 from ...db.models import Dataset, TrainingJob, Profile, DriftReport
 from ...db.session import get_db
-from ...api.schemas import PredictionRequest, PredictionResponse, BatchPredictionRequest, BatchPredictionResponse, DriftRequest, DriftResponse
+from ...api.schemas import (
+    PredictionRequest,
+    PredictionResponse,
+    BatchPredictionRequest,
+    BatchPredictionResponse,
+    DriftRequest,
+    DriftResponse,
+)
 from ...core.storage import storage
 from ...core.serving.model_loader import model_cache
 from ...core.limiter import limiter
 
 router = APIRouter(prefix="/predict", tags=["prediction"])
 
+
 @router.post("", response_model=PredictionResponse)
 @limiter.limit("100/minute")
-async def predict(request: Request, req: PredictionRequest, response: Response, db: Session = Depends(get_db)):
+async def predict(
+    request: Request,
+    req: PredictionRequest,
+    response: Response,
+    db: Session = Depends(get_db),
+):
     # 1. Get Best Model (is_active=True primary, fallback to max roc_auc)
-    active_job = db.query(TrainingJob).filter(
-        TrainingJob.dataset_id == req.dataset_id,
-        TrainingJob.status == "completed",
-        TrainingJob.is_active == True
-    ).first()
+    active_job = (
+        db.query(TrainingJob)
+        .filter(
+            TrainingJob.dataset_id == req.dataset_id,
+            TrainingJob.status == "completed",
+            TrainingJob.is_active == True,
+        )
+        .first()
+    )
 
-    job = active_job or db.query(TrainingJob).filter(
-        TrainingJob.dataset_id == req.dataset_id, 
-        TrainingJob.status == "completed"
-    ).order_by(TrainingJob.roc_auc.desc()).first()
-    
+    job = (
+        active_job
+        or db.query(TrainingJob)
+        .filter(
+            TrainingJob.dataset_id == req.dataset_id, TrainingJob.status == "completed"
+        )
+        .order_by(TrainingJob.roc_auc.desc())
+        .first()
+    )
+
     if not job or not job.model_uri:
-        raise HTTPException(status_code=404, detail="No completed training job found for this dataset")
+        raise HTTPException(
+            status_code=404, detail="No completed training job found for this dataset"
+        )
 
     # 2. Load Model (cached)
     cache_res = model_cache.get_model(job.model_uri)
@@ -43,7 +67,7 @@ async def predict(request: Request, req: PredictionRequest, response: Response, 
     else:
         model = cache_res
         model_type = "sklearn"
-        
+
     if model is None:
         load_res = model_cache.load_model(job.model_uri, job.model_uri)
         if isinstance(load_res, tuple) and len(load_res) == 2:
@@ -51,63 +75,88 @@ async def predict(request: Request, req: PredictionRequest, response: Response, 
         else:
             model = load_res
             model_type = "sklearn"
-        
+
     response.headers["X-Model-Type"] = model_type
-    
+
     # 3. Prepare Input
     input_df = pd.DataFrame(req.records)
-    
+
     # Synthesize CPI column if expected by model but missing in input
     profile = db.query(Profile).filter(Profile.dataset_id == req.dataset_id).first()
     if profile and profile.suggested_target:
         try:
             from ...core.profiler.target_analysis import TargetAnalysis
+
             target_analysis = TargetAnalysis.parse_raw(profile.suggested_target)
             composite_config = target_analysis.composite_target
             if composite_config:
                 cpi_col = composite_config.cpi_column_name or "cpi_score"
                 if cpi_col not in input_df.columns:
                     expects_cpi = False
-                    if hasattr(model, "feature_names_in_") and cpi_col in model.feature_names_in_:
+                    if (
+                        hasattr(model, "feature_names_in_")
+                        and cpi_col in model.feature_names_in_
+                    ):
                         expects_cpi = True
-                    elif hasattr(model, "steps") and hasattr(model.steps[0][1], "feature_names_in_") and cpi_col in model.steps[0][1].feature_names_in_:
+                    elif (
+                        hasattr(model, "steps")
+                        and hasattr(model.steps[0][1], "feature_names_in_")
+                        and cpi_col in model.steps[0][1].feature_names_in_
+                    ):
                         expects_cpi = True
-                    
+
                     if expects_cpi:
-                        from ...core.profiler.target_synthesizer import _weighted_synthesis, _pca_synthesis
+                        from ...core.profiler.target_synthesizer import (
+                            _weighted_synthesis,
+                            _pca_synthesis,
+                        )
+
                         if composite_config.strategy == "PCA":
-                            _, cpi_series = _pca_synthesis(input_df, composite_config.source_columns, job.target_column)
+                            _, cpi_series = _pca_synthesis(
+                                input_df,
+                                composite_config.source_columns,
+                                job.target_column,
+                            )
                             input_df[cpi_col] = cpi_series
-                        elif composite_config.strategy == "WEIGHTED" and composite_config.weights:
-                            cpi_series = _weighted_synthesis(input_df, composite_config.weights)
+                        elif (
+                            composite_config.strategy == "WEIGHTED"
+                            and composite_config.weights
+                        ):
+                            cpi_series = _weighted_synthesis(
+                                input_df, composite_config.weights
+                            )
                             input_df[cpi_col] = cpi_series
         except Exception as synth_ex:
-            logger.error(f"Failed to synthesize composite column during predict: {synth_ex}")
-            
+            logger.error(
+                f"Failed to synthesize composite column during predict: {synth_ex}"
+            )
+
     # 4. Get optimal threshold
     optimal_threshold, _ = get_optimal_threshold(job)
-    
+
     try:
         # 5. Predict
         loop = asyncio.get_event_loop()
         probabilities = await loop.run_in_executor(
-            None,
-            partial(model.predict_proba, input_df)
+            None, partial(model.predict_proba, input_df)
         )
         probabilities = probabilities[:, 1]
-        
+
         results = []
         for i, prob in enumerate(probabilities):
             risk = classify_risk(float(prob), optimal_threshold)
-            results.append({
-                "record_id": req.records[i].get("id") or str(i),
-                "churn_probability": float(prob),
-                "risk_level": risk
-            })
-            
+            results.append(
+                {
+                    "record_id": req.records[i].get("id") or str(i),
+                    "churn_probability": float(prob),
+                    "risk_level": risk,
+                }
+            )
+
         return {"predictions": results}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Inference failed: {str(e)}")
+
 
 def get_optimal_threshold(job: TrainingJob) -> tuple[float, str]:
     import re
@@ -115,9 +164,10 @@ def get_optimal_threshold(job: TrainingJob) -> tuple[float, str]:
     import mlflow
     import os
     from urllib.parse import urlparse
+
     optimal_threshold = None
     threshold_source = "optimal"
-    
+
     match = re.search(r"runs:/+([^/]+)", job.model_uri)
     if match:
         run_id = match.group(1)
@@ -143,7 +193,9 @@ def get_optimal_threshold(job: TrainingJob) -> tuple[float, str]:
             logger.error(f"Failed to load optimal_threshold from MLflow artifact: {ex}")
 
     # Fallback to parse local file path directly if local URI (Hướng 1)
-    if optimal_threshold is None and (job.model_uri.startswith("file://") or os.path.exists(job.model_uri)):
+    if optimal_threshold is None and (
+        job.model_uri.startswith("file://") or os.path.exists(job.model_uri)
+    ):
         try:
             path = urlparse(job.model_uri).path
             if os.name == "nt" and len(path) > 3 and path[0] == "/" and path[2] == ":":
@@ -159,9 +211,12 @@ def get_optimal_threshold(job: TrainingJob) -> tuple[float, str]:
     if optimal_threshold is None:
         optimal_threshold = 0.5
         threshold_source = "fallback_default"
-        logger.warning("Warning: optimal_threshold not found. Using default fallback threshold of 0.5.")
-        
+        logger.warning(
+            "Warning: optimal_threshold not found. Using default fallback threshold of 0.5."
+        )
+
     return optimal_threshold, threshold_source
+
 
 def classify_risk(prob: float, threshold: float) -> str:
     if prob >= min(threshold * 1.5, 0.85):
@@ -171,23 +226,40 @@ def classify_risk(prob: float, threshold: float) -> str:
     else:
         return "Low"
 
+
 @router.post("/batch", response_model=BatchPredictionResponse)
 @limiter.limit("30/minute")
-async def predict_batch(request: Request, req: BatchPredictionRequest, response: Response, db: Session = Depends(get_db)):
+async def predict_batch(
+    request: Request,
+    req: BatchPredictionRequest,
+    response: Response,
+    db: Session = Depends(get_db),
+):
     # 1. Get Best Model (is_active=True primary, fallback to max roc_auc)
-    active_job = db.query(TrainingJob).filter(
-        TrainingJob.dataset_id == req.dataset_id,
-        TrainingJob.status == "completed",
-        TrainingJob.is_active == True
-    ).first()
+    active_job = (
+        db.query(TrainingJob)
+        .filter(
+            TrainingJob.dataset_id == req.dataset_id,
+            TrainingJob.status == "completed",
+            TrainingJob.is_active == True,
+        )
+        .first()
+    )
 
-    job = active_job or db.query(TrainingJob).filter(
-        TrainingJob.dataset_id == req.dataset_id, 
-        TrainingJob.status == "completed"
-    ).order_by(TrainingJob.roc_auc.desc()).first()
-    
+    job = (
+        active_job
+        or db.query(TrainingJob)
+        .filter(
+            TrainingJob.dataset_id == req.dataset_id, TrainingJob.status == "completed"
+        )
+        .order_by(TrainingJob.roc_auc.desc())
+        .first()
+    )
+
     if not job or not job.model_uri:
-        raise HTTPException(status_code=404, detail="No completed training job found for this dataset")
+        raise HTTPException(
+            status_code=404, detail="No completed training job found for this dataset"
+        )
 
     # 2. Load Model (cached)
     try:
@@ -197,7 +269,7 @@ async def predict_batch(request: Request, req: BatchPredictionRequest, response:
         else:
             model = cache_res
             model_type = "sklearn"
-            
+
         if model is None:
             load_res = model_cache.load_model(job.model_uri, job.model_uri)
             if isinstance(load_res, tuple) and len(load_res) == 2:
@@ -207,50 +279,78 @@ async def predict_batch(request: Request, req: BatchPredictionRequest, response:
                 model_type = "sklearn"
         response.headers["X-Model-Type"] = model_type
     except Exception as e:
-         raise HTTPException(status_code=500, detail=f"Failed to load model: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to load model: {str(e)}")
 
     # 3. Load Data from R2
     try:
         content = storage.download_file(req.file_path)
     except Exception as e:
-        raise HTTPException(status_code=404, detail=f"File not found in storage: {str(e)}")
+        raise HTTPException(
+            status_code=404, detail=f"File not found in storage: {str(e)}"
+        )
 
     from ...core.ingestion.parsers import parse_file
+
     try:
         result = parse_file(content=content, filename=req.file_path)
         df = result.df
     except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Failed to parse dataset file: {str(e)}")
+        raise HTTPException(
+            status_code=400, detail=f"Failed to parse dataset file: {str(e)}"
+        )
 
     if df is None or df.empty:
-         raise HTTPException(status_code=400, detail="Empty or invalid dataset dataframe")
+        raise HTTPException(
+            status_code=400, detail="Empty or invalid dataset dataframe"
+        )
 
     # Synthesize CPI column if expected by model but missing in input dataframe
     profile = db.query(Profile).filter(Profile.dataset_id == req.dataset_id).first()
     if profile and profile.suggested_target:
         try:
             from ...core.profiler.target_analysis import TargetAnalysis
+
             target_analysis = TargetAnalysis.parse_raw(profile.suggested_target)
             composite_config = target_analysis.composite_target
             if composite_config:
                 cpi_col = composite_config.cpi_column_name or "cpi_score"
                 if cpi_col not in df.columns:
                     expects_cpi = False
-                    if hasattr(model, "feature_names_in_") and cpi_col in model.feature_names_in_:
+                    if (
+                        hasattr(model, "feature_names_in_")
+                        and cpi_col in model.feature_names_in_
+                    ):
                         expects_cpi = True
-                    elif hasattr(model, "steps") and hasattr(model.steps[0][1], "feature_names_in_") and cpi_col in model.steps[0][1].feature_names_in_:
+                    elif (
+                        hasattr(model, "steps")
+                        and hasattr(model.steps[0][1], "feature_names_in_")
+                        and cpi_col in model.steps[0][1].feature_names_in_
+                    ):
                         expects_cpi = True
-                    
+
                     if expects_cpi:
-                        from ...core.profiler.target_synthesizer import _weighted_synthesis, _pca_synthesis
+                        from ...core.profiler.target_synthesizer import (
+                            _weighted_synthesis,
+                            _pca_synthesis,
+                        )
+
                         if composite_config.strategy == "PCA":
-                            _, cpi_series = _pca_synthesis(df, composite_config.source_columns, job.target_column)
+                            _, cpi_series = _pca_synthesis(
+                                df, composite_config.source_columns, job.target_column
+                            )
                             df[cpi_col] = cpi_series
-                        elif composite_config.strategy == "WEIGHTED" and composite_config.weights:
-                            cpi_series = _weighted_synthesis(df, composite_config.weights)
+                        elif (
+                            composite_config.strategy == "WEIGHTED"
+                            and composite_config.weights
+                        ):
+                            cpi_series = _weighted_synthesis(
+                                df, composite_config.weights
+                            )
                             df[cpi_col] = cpi_series
         except Exception as synth_ex:
-            logger.error(f"Failed to synthesize composite column during batch predict: {synth_ex}")
+            logger.error(
+                f"Failed to synthesize composite column during batch predict: {synth_ex}"
+            )
 
     # 4. Load optimal_threshold using helper (Fix 2)
     optimal_threshold, threshold_source = get_optimal_threshold(job)
@@ -268,30 +368,33 @@ async def predict_batch(request: Request, req: BatchPredictionRequest, response:
         feature_cols = list(model.feature_names_in_)
     elif hasattr(model, "steps") and hasattr(model.steps[0][1], "feature_names_in_"):
         feature_cols = list(model.steps[0][1].feature_names_in_)
-    
+
     if not feature_cols:
         feature_cols = [
-            c for c in df.columns 
-            if c != job.target_column and c.lower() not in ["customerid", "customer_id", "id", "record_id", "uuid", "churn"]
+            c
+            for c in df.columns
+            if c != job.target_column
+            and c.lower()
+            not in ["customerid", "customer_id", "id", "record_id", "uuid", "churn"]
         ]
-        
+
     # 6. Predict
     loop = asyncio.get_event_loop()
     try:
         probabilities = await loop.run_in_executor(
-            None,
-            partial(model.predict_proba, df[feature_cols])
+            None, partial(model.predict_proba, df[feature_cols])
         )
         probabilities = probabilities[:, 1]
     except Exception as e:
         try:
             probabilities = await loop.run_in_executor(
-                None,
-                partial(model.predict_proba, df)
+                None, partial(model.predict_proba, df)
             )
             probabilities = probabilities[:, 1]
         except Exception as fallback_e:
-            raise HTTPException(status_code=500, detail=f"Inference failed: {str(fallback_e)}")
+            raise HTTPException(
+                status_code=500, detail=f"Inference failed: {str(fallback_e)}"
+            )
 
     results = []
     high_count = 0
@@ -306,21 +409,22 @@ async def predict_batch(request: Request, req: BatchPredictionRequest, response:
             medium_count += 1
         else:
             low_count += 1
-            
+
         record_id = str(df.iloc[i][id_col]) if id_col else str(i)
-        results.append({
-            "record_id": record_id,
-            "probability": float(prob),
-            "risk_level": risk
-        })
+        results.append(
+            {"record_id": record_id, "probability": float(prob), "risk_level": risk}
+        )
 
     # Save input data to inference storage (Task 3.0.5)
     try:
         import uuid
+
         current_date = datetime.utcnow().strftime("%Y-%m-%d")
         batch_id = str(uuid.uuid4())
-        inference_path = f"ml_artifacts/{req.dataset_id}/inference/{current_date}/{batch_id}.parquet"
-        
+        inference_path = (
+            f"ml_artifacts/{req.dataset_id}/inference/{current_date}/{batch_id}.parquet"
+        )
+
         # Drop target column if it exists to prevent leakage in inference store
         clean_inf_df = df.copy()
         if job.target_column in clean_inf_df.columns:
@@ -328,7 +432,7 @@ async def predict_batch(request: Request, req: BatchPredictionRequest, response:
         for col in list(clean_inf_df.columns):
             if col.lower() == "churn" and col != job.target_column:
                 clean_inf_df = clean_inf_df.drop(columns=[col])
-                
+
         pq_buf = io.BytesIO()
         clean_inf_df.to_parquet(pq_buf, index=False)
         storage.upload_file(pq_buf.getvalue(), inference_path)
@@ -343,25 +447,30 @@ async def predict_batch(request: Request, req: BatchPredictionRequest, response:
         "predictions": results,
         "threshold_used": optimal_threshold,
         "threshold_source": threshold_source,
-        "model_type": model_type
+        "model_type": model_type,
     }
+
 
 @router.get("/datasets/{dataset_id}/feature-importance")
 async def get_feature_importance(dataset_id: str, db: Session = Depends(get_db)):
     # 1. Get Best Model for Dataset
-    job = db.query(TrainingJob).filter(
-        TrainingJob.dataset_id == dataset_id, 
-        TrainingJob.status == "completed"
-    ).order_by(TrainingJob.roc_auc.desc()).first()
-    
+    job = (
+        db.query(TrainingJob)
+        .filter(TrainingJob.dataset_id == dataset_id, TrainingJob.status == "completed")
+        .order_by(TrainingJob.roc_auc.desc())
+        .first()
+    )
+
     if not job or not job.model_uri:
-        raise HTTPException(status_code=404, detail="No completed training job found for this dataset")
+        raise HTTPException(
+            status_code=404, detail="No completed training job found for this dataset"
+        )
 
     # 2. Load Model
     try:
         model = model_cache.get_model(job.model_uri)
     except Exception as e:
-         raise HTTPException(status_code=500, detail=f"Failed to load model: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to load model: {str(e)}")
 
     # 3. Try to extract feature importances
     estimator = None
@@ -369,10 +478,10 @@ async def get_feature_importance(dataset_id: str, db: Session = Depends(get_db))
         estimator = model.steps[-1][1]
     else:
         estimator = model
-        
+
     importances = None
     feature_names = []
-    
+
     if hasattr(estimator, "feature_importances_"):
         importances = estimator.feature_importances_.tolist()
         if hasattr(model, "feature_names_in_"):
@@ -381,9 +490,10 @@ async def get_feature_importance(dataset_id: str, db: Session = Depends(get_db))
             feature_names = list(estimator.feature_names_in_)
         else:
             feature_names = [f"feature_{i}" for i in range(len(importances))]
-            
+
     elif hasattr(estimator, "coef_"):
         import numpy as np
+
         coef = estimator.coef_
         if len(coef.shape) > 1:
             coef = coef[0]
@@ -392,38 +502,48 @@ async def get_feature_importance(dataset_id: str, db: Session = Depends(get_db))
             feature_names = list(model.feature_names_in_)
         else:
             feature_names = [f"feature_{i}" for i in range(len(importances))]
-            
+
     if importances is None:
         return {"feature_importances": []}
-        
+
     sorted_importances = sorted(
-        [{"feature": f, "importance": imp} for f, imp in zip(feature_names, importances)],
+        [
+            {"feature": f, "importance": imp}
+            for f, imp in zip(feature_names, importances)
+        ],
         key=lambda x: x["importance"],
-        reverse=True
+        reverse=True,
     )
-    
+
     return {"feature_importances": sorted_importances}
+
 
 @router.post("/datasets/{dataset_id}/drift", response_model=DriftResponse)
 @router.post("/{dataset_id}/drift", response_model=DriftResponse)
-async def detect_dataset_drift(dataset_id: str, req: DriftRequest, db: Session = Depends(get_db)):
+async def detect_dataset_drift(
+    dataset_id: str, req: DriftRequest, db: Session = Depends(get_db)
+):
     # 1. Get Dataset and its profile
     dataset = db.query(Dataset).filter(Dataset.id == dataset_id).first()
     if not dataset:
         raise HTTPException(status_code=404, detail="Dataset not found")
-        
+
     profile_record = db.query(Profile).filter(Profile.dataset_id == dataset_id).first()
     if not profile_record or not profile_record.profiles_json:
         raise HTTPException(status_code=404, detail="Dataset profile not found")
 
     # 2. Get Best Completed Training Job to identify feature columns
-    job = db.query(TrainingJob).filter(
-        TrainingJob.dataset_id == dataset_id,
-        TrainingJob.status == "completed"
-    ).order_by(TrainingJob.roc_auc.desc()).first()
-    
+    job = (
+        db.query(TrainingJob)
+        .filter(TrainingJob.dataset_id == dataset_id, TrainingJob.status == "completed")
+        .order_by(TrainingJob.roc_auc.desc())
+        .first()
+    )
+
     if not job or not job.model_uri:
-        raise HTTPException(status_code=404, detail="No completed training job found for this dataset")
+        raise HTTPException(
+            status_code=404, detail="No completed training job found for this dataset"
+        )
 
     # 3. Load Model to extract feature names
     try:
@@ -433,7 +553,7 @@ async def detect_dataset_drift(dataset_id: str, req: DriftRequest, db: Session =
         else:
             model = cache_res
             model_type = "sklearn"
-            
+
         if model is None:
             load_res = model_cache.load_model(job.model_uri, job.model_uri)
             if isinstance(load_res, tuple) and len(load_res) == 2:
@@ -442,44 +562,59 @@ async def detect_dataset_drift(dataset_id: str, req: DriftRequest, db: Session =
                 model = load_res
                 model_type = "sklearn"
     except Exception as e:
-         raise HTTPException(status_code=500, detail=f"Failed to load model: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to load model: {str(e)}")
 
     # 4. Determine feature columns and their types from profiles
     profiles_list = profile_record.profiles_json
-    numerical_cols = [p["name"] for p in profiles_list if p["inferred_role"] == "NUMERIC"]
-    categorical_cols = [p["name"] for p in profiles_list if p["inferred_role"] == "CATEGORICAL"]
+    numerical_cols = [
+        p["name"] for p in profiles_list if p["inferred_role"] == "NUMERIC"
+    ]
+    categorical_cols = [
+        p["name"] for p in profiles_list if p["inferred_role"] == "CATEGORICAL"
+    ]
 
     feature_cols = []
     if hasattr(model, "feature_names_in_"):
         feature_cols = list(model.feature_names_in_)
     elif hasattr(model, "steps") and hasattr(model.steps[0][1], "feature_names_in_"):
         feature_cols = list(model.steps[0][1].feature_names_in_)
-    
+
     if not feature_cols:
         feature_cols = [
-            c for c in numerical_cols + categorical_cols
-            if c != job.target_column and c.lower() not in ["customerid", "customer_id", "id", "record_id", "uuid", "churn"]
+            c
+            for c in numerical_cols + categorical_cols
+            if c != job.target_column
+            and c.lower()
+            not in ["customerid", "customer_id", "id", "record_id", "uuid", "churn"]
         ]
 
     # 5. Download original training dataset (reference)
     try:
         ref_content = storage.download_file(dataset.r2_path)
     except Exception as e:
-        raise HTTPException(status_code=404, detail=f"Reference training dataset not found in storage: {str(e)}")
+        raise HTTPException(
+            status_code=404,
+            detail=f"Reference training dataset not found in storage: {str(e)}",
+        )
 
     # 6. Load target inference dataset (target)
     target_dfs = []
-    
+
     if req.target_file_path:
         # Backward compatibility / specific manual file
         try:
             target_content = storage.download_file(req.target_file_path)
             from ...core.ingestion.parsers import parse_file
-            target_df = parse_file(content=target_content, filename=req.target_file_path).df
+
+            target_df = parse_file(
+                content=target_content, filename=req.target_file_path
+            ).df
             if target_df is not None and not target_df.empty:
                 target_dfs.append(target_df)
         except Exception as e:
-            raise HTTPException(status_code=400, detail=f"Failed to load target file path: {str(e)}")
+            raise HTTPException(
+                status_code=400, detail=f"Failed to load target file path: {str(e)}"
+            )
     else:
         # Auto scan folder for date
         date_str = req.date or datetime.utcnow().strftime("%Y-%m-%d")
@@ -488,11 +623,14 @@ async def detect_dataset_drift(dataset_id: str, req: DriftRequest, db: Session =
             files = storage.list_files(prefix)
         except Exception:
             files = []
-            
+
         parquet_files = [f for f in files if f.endswith(".parquet")]
         if not parquet_files:
-            raise HTTPException(status_code=404, detail=f"No inference parquet files found for dataset {dataset_id} on date {date_str}")
-        
+            raise HTTPException(
+                status_code=404,
+                detail=f"No inference parquet files found for dataset {dataset_id} on date {date_str}",
+            )
+
         for file_path in parquet_files:
             try:
                 f_content = storage.download_file(file_path)
@@ -500,31 +638,41 @@ async def detect_dataset_drift(dataset_id: str, req: DriftRequest, db: Session =
                 if df_chunk is not None and not df_chunk.empty:
                     target_dfs.append(df_chunk)
             except Exception as parse_err:
-                logger.warning(f"Failed to parse inference file {file_path}: {parse_err}")
+                logger.warning(
+                    f"Failed to parse inference file {file_path}: {parse_err}"
+                )
 
     if not target_dfs:
-        raise HTTPException(status_code=400, detail="No target data could be successfully parsed")
-    
+        raise HTTPException(
+            status_code=400, detail="No target data could be successfully parsed"
+        )
+
     target_df = pd.concat(target_dfs, ignore_index=True)
 
     # Parse dataframes
     from ...core.ingestion.parsers import parse_file
+
     try:
         ref_df = parse_file(content=ref_content, filename=dataset.filename).df
     except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Failed to parse reference dataset: {str(e)}")
+        raise HTTPException(
+            status_code=400, detail=f"Failed to parse reference dataset: {str(e)}"
+        )
 
     if ref_df is None or ref_df.empty or target_df is None or target_df.empty:
-         raise HTTPException(status_code=400, detail="Empty reference or target dataframe")
+        raise HTTPException(
+            status_code=400, detail="Empty reference or target dataframe"
+        )
 
     # 7. Run drift detector
     from ...core.serving.drift_detector import calculate_drift_report
+
     report = calculate_drift_report(
         reference_df=ref_df,
         target_df=target_df,
         feature_cols=feature_cols,
         numerical_cols=numerical_cols,
-        categorical_cols=categorical_cols
+        categorical_cols=categorical_cols,
     )
 
     # 8. Save report to DB (Task 3.2 & 3.5)
@@ -533,7 +681,7 @@ async def detect_dataset_drift(dataset_id: str, req: DriftRequest, db: Session =
         reference_rows=len(ref_df),
         target_rows=len(target_df),
         drift_detected=report["drift_detected"],
-        metrics=report["metrics"]
+        metrics=report["metrics"],
     )
     db.add(drift_report_record)
     db.commit()
@@ -544,5 +692,5 @@ async def detect_dataset_drift(dataset_id: str, req: DriftRequest, db: Session =
         "reference_rows": len(ref_df),
         "target_rows": len(target_df),
         "drift_detected": report["drift_detected"],
-        "metrics": report["metrics"]
+        "metrics": report["metrics"],
     }

@@ -6,6 +6,7 @@ try:
     import torch.nn as nn
     import torch.optim as optim
     from torch.utils.data import TensorDataset, DataLoader
+
     _TORCH_AVAILABLE = True
 except (ImportError, OSError):
     _TORCH_AVAILABLE = False
@@ -16,10 +17,13 @@ except (ImportError, OSError):
     TensorDataset = None
     DataLoader = None
 
+
 def is_mtl_available() -> bool:
     return _TORCH_AVAILABLE
 
+
 if _TORCH_AVAILABLE:
+
     class _MTLPyTorchModel(nn.Module):
         def __init__(self, input_dim: int):
             super().__init__()
@@ -32,20 +36,12 @@ if _TORCH_AVAILABLE:
                 nn.Linear(128, 64),
                 nn.BatchNorm1d(64),
                 nn.ReLU(),
-                nn.Dropout(0.2)
+                nn.Dropout(0.2),
             )
             # Head A (Binary classification)
-            self.head_a = nn.Sequential(
-                nn.Linear(64, 32),
-                nn.ReLU(),
-                nn.Linear(32, 1)
-            )
+            self.head_a = nn.Sequential(nn.Linear(64, 32), nn.ReLU(), nn.Linear(32, 1))
             # Head B (Continuous CPI regression)
-            self.head_b = nn.Sequential(
-                nn.Linear(64, 32),
-                nn.ReLU(),
-                nn.Linear(32, 1)
-            )
+            self.head_b = nn.Sequential(nn.Linear(64, 32), nn.ReLU(), nn.Linear(32, 1))
 
         def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
             shared_out = self.shared(x)
@@ -55,15 +51,19 @@ if _TORCH_AVAILABLE:
 
         def get_embeddings(self, x: torch.Tensor) -> torch.Tensor:
             return self.shared(x)
+
 else:
+
     class _MTLPyTorchModel:
         def __init__(self, input_dim: int):
             pass
 
+
 class MTLChurnModel:
     """Multi-Task Learning model with binary classification + regression heads."""
+
     _ALPHA = 0.7  # BCE weight (primary binary task)
-    _BETA = 0.3   # MSE weight (CPI regression task)
+    _BETA = 0.3  # MSE weight (CPI regression task)
 
     def __init__(self):
         self.model = None
@@ -73,29 +73,41 @@ class MTLChurnModel:
         state = self.__dict__.copy()
         if self.model is not None:
             import io
+
             buf = io.BytesIO()
-            torch.save({
-                'model_state_dict': self.model.state_dict(),
-                'input_dim': self.input_dim
-            }, buf)
-            state['model_bytes'] = buf.getvalue()
-            state['model'] = None
+            torch.save(
+                {
+                    "model_state_dict": self.model.state_dict(),
+                    "input_dim": self.input_dim,
+                },
+                buf,
+            )
+            state["model_bytes"] = buf.getvalue()
+            state["model"] = None
         return state
 
     def __setstate__(self, state):
         self.__dict__.update(state)
-        if 'model_bytes' in state:
+        if "model_bytes" in state:
             import io
-            buf = io.BytesIO(state['model_bytes'])
-            checkpoint = torch.load(buf, map_location='cpu')
-            self.input_dim = checkpoint['input_dim']
-            self.model = _MTLPyTorchModel(self.input_dim)
-            self.model.load_state_dict(checkpoint['model_state_dict'])
-            del self.__dict__['model_bytes']
 
-    def fit(self, X: np.ndarray, y_binary: np.ndarray, y_cpi: np.ndarray,
-            epochs: int = 50, lr: float = 1e-3, batch_size: int = 64,
-            random_state: int = 42) -> "MTLChurnModel":
+            buf = io.BytesIO(state["model_bytes"])
+            checkpoint = torch.load(buf, map_location="cpu")
+            self.input_dim = checkpoint["input_dim"]
+            self.model = _MTLPyTorchModel(self.input_dim)
+            self.model.load_state_dict(checkpoint["model_state_dict"])
+            del self.__dict__["model_bytes"]
+
+    def fit(
+        self,
+        X: np.ndarray,
+        y_binary: np.ndarray,
+        y_cpi: np.ndarray,
+        epochs: int = 50,
+        lr: float = 1e-3,
+        batch_size: int = 64,
+        random_state: int = 42,
+    ) -> "MTLChurnModel":
         if not _TORCH_AVAILABLE:
             raise ImportError("PyTorch is required to train MTLChurnModel.")
 
@@ -110,7 +122,9 @@ class MTLChurnModel:
         dataset = TensorDataset(X_t, y_bin_t, y_cpi_t)
         g = torch.Generator()
         g.manual_seed(random_state)
-        dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True, generator=g)
+        dataloader = DataLoader(
+            dataset, batch_size=batch_size, shuffle=True, generator=g
+        )
 
         optimizer = optim.Adam(self.model.parameters(), lr=lr)
         bce_loss_fn = nn.BCEWithLogitsLoss()

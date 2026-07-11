@@ -10,10 +10,12 @@ from ...db.models import TrainingJob
 
 logger = logging.getLogger("cdp.retrain_loop")
 
+
 async def cleanup_old_inference_files():
     """Xóa inference parquet files cũ hơn INFERENCE_RETENTION_DAYS ngày."""
     try:
         from ...core.storage import storage
+
         INFERENCE_RETENTION_DAYS = int(os.getenv("INFERENCE_RETENTION_DAYS", "30"))
         cutoff = datetime.utcnow() - timedelta(days=INFERENCE_RETENTION_DAYS)
 
@@ -41,29 +43,32 @@ async def cleanup_old_inference_files():
     except Exception as e:
         logger.error(f"Inference cleanup failed: {e}")
 
+
 async def run_drift_check_loop():
     logger.info("Drift auto-retrain loop started.")
-    
+
     interval = config.DRIFT_CHECK_INTERVAL_SEC
     api_key = config.API_KEY
     headers = {"X-API-Key": api_key}
-    
+
     # Wait a short delay on startup so the Uvicorn server is up and listening
     await asyncio.sleep(10)
-    
+
     while True:
         try:
             logger.info("Scanning for dataset drift...")
             db = SessionLocal()
             try:
                 active_dataset_ids = [
-                    r[0] for r in db.query(TrainingJob.dataset_id)
+                    r[0]
+                    for r in db.query(TrainingJob.dataset_id)
                     .filter(TrainingJob.status == "completed")
-                    .distinct().all()
+                    .distinct()
+                    .all()
                 ]
             finally:
                 db.close()
-                
+
             async with httpx.AsyncClient(timeout=60.0) as client:
                 for ds_id in active_dataset_ids:
                     logger.info(f"Checking drift for dataset {ds_id}...")
@@ -73,41 +78,62 @@ async def run_drift_check_loop():
                         if resp.status_code == 200:
                             drift_data = resp.json()
                             if drift_data.get("drift_detected", False):
-                                logger.warning(f"Drift detected for dataset {ds_id}! Triggering auto-retrain...")
+                                logger.warning(
+                                    f"Drift detected for dataset {ds_id}! Triggering auto-retrain..."
+                                )
                                 train_url = "http://localhost:8000/api/v1/jobs/train"
                                 train_payload = {
                                     "dataset_id": ds_id,
-                                    "target_column": "churn_label"
+                                    "target_column": "churn_label",
                                 }
-                                
+
                                 db = SessionLocal()
                                 try:
-                                    best_job = db.query(TrainingJob).filter(
-                                        TrainingJob.dataset_id == ds_id,
-                                        TrainingJob.status == "completed"
-                                    ).order_by(TrainingJob.roc_auc.desc()).first()
+                                    best_job = (
+                                        db.query(TrainingJob)
+                                        .filter(
+                                            TrainingJob.dataset_id == ds_id,
+                                            TrainingJob.status == "completed",
+                                        )
+                                        .order_by(TrainingJob.roc_auc.desc())
+                                        .first()
+                                    )
                                     if best_job:
-                                        train_payload["target_column"] = best_job.target_column
+                                        train_payload["target_column"] = (
+                                            best_job.target_column
+                                        )
                                 finally:
                                     db.close()
-                                    
-                                train_resp = await client.post(train_url, json=train_payload, headers=headers)
+
+                                train_resp = await client.post(
+                                    train_url, json=train_payload, headers=headers
+                                )
                                 if train_resp.status_code == 200:
-                                    logger.info(f"Auto-retrain job triggered successfully for dataset {ds_id}: {train_resp.json()}")
+                                    logger.info(
+                                        f"Auto-retrain job triggered successfully for dataset {ds_id}: {train_resp.json()}"
+                                    )
                                 else:
-                                    logger.error(f"Failed to trigger auto-retrain for {ds_id}: {train_resp.status_code} - {train_resp.text}")
+                                    logger.error(
+                                        f"Failed to trigger auto-retrain for {ds_id}: {train_resp.status_code} - {train_resp.text}"
+                                    )
                         elif resp.status_code == 404:
-                            logger.info(f"No inference data found for dataset {ds_id} today, skipping.")
+                            logger.info(
+                                f"No inference data found for dataset {ds_id} today, skipping."
+                            )
                         else:
-                            logger.error(f"Drift check API error for {ds_id}: {resp.status_code} - {resp.text}")
+                            logger.error(
+                                f"Drift check API error for {ds_id}: {resp.status_code} - {resp.text}"
+                            )
                     except Exception as api_err:
-                        logger.error(f"Error calling drift API for dataset {ds_id}: {api_err}")
-            
+                        logger.error(
+                            f"Error calling drift API for dataset {ds_id}: {api_err}"
+                        )
+
             # Run old inference files cleanup
             await cleanup_old_inference_files()
-                        
+
         except Exception as loop_err:
             logger.error(f"Error in drift check loop iteration: {loop_err}")
-            
+
         logger.info(f"Drift loop sleeping for {interval} seconds.")
         await asyncio.sleep(interval)
