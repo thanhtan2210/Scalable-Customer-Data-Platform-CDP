@@ -31,7 +31,8 @@ jobs:
           API_KEY: test-api-key
           MLFLOW_TRACKING_URI: http://localhost:5000
         run: |
-          python -m pytest tests/ -v --maxfail=3
+          # Exclude e2e tests (require a live server on localhost:8000)
+          python -m pytest tests/ --ignore=tests/e2e -v --maxfail=5
 
   deploy-backend:
     needs: test

@@ -48,7 +48,8 @@ jobs:
         export MLFLOW_TRACKING_URI=http://localhost:5000
         export DATABASE_URL=sqlite:///./tests/test.db
         # Run tests with coverage report
-        python -m pytest tests/ -v --maxfail=3 --cov=backend/app --cov-report=xml:coverage.xml --cov-report=term-missing --cov-fail-under=40
+        # Run tests with coverage report (exclude e2e tests which require a live server)
+        python -m pytest tests/ --ignore=tests/e2e -v --maxfail=5 --cov=backend/app --cov-report=xml:coverage.xml --cov-report=term-missing --cov-fail-under=40
 
     - name: Upload Coverage to Codecov
       uses: codecov/codecov-action@v4
