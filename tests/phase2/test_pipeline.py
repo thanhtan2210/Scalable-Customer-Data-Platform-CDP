@@ -196,9 +196,9 @@ def test_automl_integration(mock_mlflow):
          patch("backend.app.core.training.automl.StratifiedKFold", wraps=StratifiedKFold) as mock_skf:
          
         # Ủy quyền cho optimize thực tế chạy để tính được optimal_threshold thật
-        def spy_optimize(self, func, n_trials, timeout):
+        def spy_optimize(self, func, n_trials, timeout, **kwargs):
             assert n_trials == 2, f"n_trials nhận được là {n_trials}, kỳ vọng đọc từ env var là 2!"
-            return original_optimize(self, func, n_trials=n_trials, timeout=timeout)
+            return original_optimize(self, func, n_trials=n_trials, timeout=timeout, **kwargs)
             
         mock_optimize.side_effect = spy_optimize
         
