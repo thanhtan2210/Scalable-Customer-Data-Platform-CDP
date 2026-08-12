@@ -105,20 +105,45 @@ def detect_target(profiles: list[dict], df: pd.DataFrame) -> TargetAnalysis:
             ent_score = ENTROPY_SCORE_HIGH
         score += ent_score
 
-        # Secondary Signals
+        # String binary bonus check (e.g. yes/no, true/false, y/n)
+        STRING_BINARY_VALUES = {
+            frozenset({"yes", "no"}),
+            frozenset({"true", "false"}),
+            frozenset({"y", "n"}),
+            frozenset({"1", "0"}),
+            frozenset({"positive", "negative"}),
+        }
+        if is_binary and p.get("inferred_dtype") == "object" and col in df.columns:
+            sample_vals = df[col].dropna().astype(str).str.lower().unique()
+            if frozenset(sample_vals) in STRING_BINARY_VALUES:
+                score += 0.3
+
+        # Secondary Signals: Position Bonus
         position_bonus = 0.0
         if i >= total_cols - 2:
-            position_bonus = 0.1
+            position_bonus = 0.15
+            score += position_bonus
+        elif i <= 1:
+            position_bonus = 0.05
             score += position_bonus
 
+        # Secondary Signals: Keyword Match
+        CHURN_TARGET_KEYWORDS = frozenset({
+            "churn", "attrition", "turnover", "retention",
+            "exit", "exited", "leave", "left", "quit",
+            "cancel", "cancelled", "cancellation", "terminate",
+            "target", "label", "outcome", "result", "flag",
+            "status", "converted", "subscribed", "responded", "response",
+            "roi", "thoat", "huy", "nghi",
+        })
         name_lower = col.lower()
-        keyword_match = False
-        if any(
-            kw in name_lower
-            for kw in ["target", "label", "churn", "status", "attrition"]
-        ):
-            keyword_match = True
-            score += 0.1
+        keyword_match = name_lower == "y" or any(kw in name_lower for kw in CHURN_TARGET_KEYWORDS)
+        if keyword_match:
+            score += 0.5
+
+        # Compensation for imbalanced target (low entropy but matched keyword)
+        if keyword_match and ent_score == ENTROPY_SCORE_LOW and ent > 0:
+            score += 0.2
 
         candidate_list.append(
             {

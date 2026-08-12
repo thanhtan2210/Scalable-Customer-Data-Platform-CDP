@@ -4,15 +4,28 @@ from pydantic import BaseModel
 from typing import Any, List, Optional
 
 
+import csv
+
 class ParseResult(BaseModel):
     df: Any
     detected_format: str
+    detected_separator: Optional[str] = None
     sheets: Optional[List[str]] = None
     selected_sheet: Optional[str] = None
     warnings: List[str] = []
 
     class Config:
         arbitrary_types_allowed = True
+
+
+def _detect_csv_separator(content: bytes) -> str:
+    """Sniff CSV separator from first 4KB. Returns ',', ';', '\t', or '|'."""
+    sample = content[:4096].decode("utf-8", errors="replace")
+    try:
+        dialect = csv.Sniffer().sniff(sample, delimiters=",;\t|")
+        return dialect.delimiter
+    except csv.Error:
+        return ","
 
 
 def parse_file(
@@ -40,12 +53,13 @@ def parse_file(
 
     try:
         if detected_format == "csv":
-            df = pd.read_csv(io.BytesIO(content))
-            return ParseResult(df=df, detected_format="csv")
+            sep = _detect_csv_separator(content)
+            df = pd.read_csv(io.BytesIO(content), sep=sep)
+            return ParseResult(df=df, detected_format="csv", detected_separator=sep)
 
         elif detected_format == "tsv":
             df = pd.read_csv(io.BytesIO(content), sep="\t")
-            return ParseResult(df=df, detected_format="tsv")
+            return ParseResult(df=df, detected_format="tsv", detected_separator="\t")
 
         elif detected_format == "parquet":
             df = pd.read_parquet(io.BytesIO(content))
