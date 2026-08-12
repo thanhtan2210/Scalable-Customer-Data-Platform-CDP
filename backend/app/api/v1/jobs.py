@@ -295,4 +295,5 @@ async def get_job_status(job_id: str, db: Session = Depends(get_db)):
         "model_uri": job.model_uri,
         "optimal_threshold": job.optimal_threshold,
         "finished_at": job.finished_at,
+        "error_message": job.error_message,
     }
