@@ -1,5 +1,4 @@
-# pyrefly: ignore [missing-import]
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, EmailStr
 from typing import List, Optional, Dict, Any, Literal
 from datetime import datetime
 from ..core.profiler.column_profile import ColumnProfile
@@ -64,6 +63,7 @@ class JobStatusResponse(BaseModel):
     model_uri: Optional[str]
     optimal_threshold: Optional[float] = None
     finished_at: Optional[datetime]
+    error_message: Optional[str] = None
 
 
 # --- PREDICTION SCHEMAS ---
@@ -185,3 +185,43 @@ class ModelCompareResponse(BaseModel):
     model_b: ModelVersionInfo
     winner: Literal["a", "b", "tie"]
     delta_roc_auc: float
+
+
+# --- JWT AUTH SCHEMAS ---
+class UserInfo(BaseModel):
+    id: str
+    email: str
+    full_name: Optional[str] = None
+    is_admin: bool
+    created_at: datetime
+
+
+class TokenResponse(BaseModel):
+    access_token: str
+    refresh_token: str
+    token_type: str = "bearer"
+    expires_in: int
+    user: UserInfo
+
+
+class UserRegisterRequest(BaseModel):
+    email: EmailStr
+    password: str = Field(
+        min_length=8,
+        description="Minimum 8 characters"
+    )
+    full_name: Optional[str] = None
+
+
+class UserLoginRequest(BaseModel):
+    email: EmailStr
+    password: str
+
+
+class RefreshTokenRequest(BaseModel):
+    refresh_token: str
+
+
+class ChangePasswordRequest(BaseModel):
+    current_password: str
+    new_password: str = Field(min_length=8)
