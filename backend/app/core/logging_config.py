@@ -1,6 +1,7 @@
 import logging
 import json
 import os
+import sys
 from datetime import datetime
 
 
@@ -18,10 +19,22 @@ class JSONFormatter(logging.Formatter):
 
 
 def setup_logging():
+    # Fix Windows console UTF-8 encoding issue
+    if hasattr(sys.stdout, "reconfigure"):
+        try:
+            sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        except Exception:
+            pass
+    if hasattr(sys.stderr, "reconfigure"):
+        try:
+            sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+        except Exception:
+            pass
+
     log_level = os.getenv("LOG_LEVEL", "INFO").upper()
     is_production = os.getenv("ENV", "development") == "production"
 
-    handler = logging.StreamHandler()
+    handler = logging.StreamHandler(sys.stdout)
     if is_production:
         handler.setFormatter(JSONFormatter())
     else:
