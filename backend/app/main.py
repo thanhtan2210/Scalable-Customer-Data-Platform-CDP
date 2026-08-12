@@ -1,11 +1,31 @@
+import sys
+# Force UTF-8 encoding for Windows console and loggers
+if hasattr(sys.stdout, "reconfigure"):
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+if hasattr(sys.stderr, "reconfigure"):
+    try:
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+
 from fastapi import FastAPI, Security, HTTPException, status, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security.api_key import APIKeyHeader
 from datetime import datetime
-from .api.v1 import datasets, predict, jobs, monitoring, models
+import asyncio
+import os
+from contextlib import asynccontextmanager
+
+from .api.v1 import datasets, predict, jobs, monitoring, models, auth
 from .core.serving.ab_service import router as ab_router
-from .core.config import ENVIRONMENT, API_KEY, ALLOWED_ORIGINS
+from .core.config import ENVIRONMENT, API_KEY, ALLOWED_ORIGINS, IS_PRODUCTION
 from .core.logging_config import setup_logging
+from .core.dependencies import get_current_user
+from .core import config
+from .core.serving.retrain_loop import run_drift_check_loop
 
 # Initialize Logging
 setup_logging()
@@ -20,12 +40,6 @@ if ENVIRONMENT == "production" and API_KEY == "test-api-key":
         "CRITICAL SECURITY ERROR: API_KEY cannot be the default 'test-api-key' in production environment!"
     )
 
-import asyncio
-import os
-from contextlib import asynccontextmanager
-from .core import config
-from .core.serving.retrain_loop import run_drift_check_loop
-
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -39,7 +53,6 @@ async def lifespan(app: FastAPI):
         logger.info("Database migrations: up to date")
     except Exception as e:
         logger.error(f"Migration failed: {e}")
-        # Không raise — app vẫn start nhưng log warning rõ ràng
 
     task = None
     if config.DRIFT_AUTO_RETRAIN and config.ENABLE_DRIFT_SCHEDULER:
@@ -59,8 +72,6 @@ async def lifespan(app: FastAPI):
         except asyncio.CancelledError:
             pass
 
-
-from .core.config import IS_PRODUCTION
 
 app = FastAPI(
     title="Churn Prediction Platform API",
@@ -95,30 +106,28 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-api_key_header = APIKeyHeader(name="X-API-Key")
+# Public Auth router
+app.include_router(auth.router, prefix="/api/v1")
 
-
-async def get_api_key(api_key: str = Security(api_key_header)):
-    if api_key == API_KEY:
-        return api_key
-    raise HTTPException(
-        status_code=status.HTTP_403_FORBIDDEN, detail="Could not validate credentials"
-    )
-
-
-# Apply Auth globally for MVP
+# Protected Routers (JWT or X-API-Key)
 app.include_router(
-    datasets.router, prefix="/api/v1", dependencies=[Depends(get_api_key)]
-)
-app.include_router(jobs.router, prefix="/api/v1", dependencies=[Depends(get_api_key)])
-app.include_router(
-    predict.router, prefix="/api/v1", dependencies=[Depends(get_api_key)]
+    datasets.router, prefix="/api/v1", dependencies=[Depends(get_current_user)]
 )
 app.include_router(
-    monitoring.router, prefix="/api/v1", dependencies=[Depends(get_api_key)]
+    jobs.router, prefix="/api/v1", dependencies=[Depends(get_current_user)]
 )
-app.include_router(ab_router, prefix="/api/v1", dependencies=[Depends(get_api_key)])
-app.include_router(models.router, prefix="/api/v1", dependencies=[Depends(get_api_key)])
+app.include_router(
+    predict.router, prefix="/api/v1", dependencies=[Depends(get_current_user)]
+)
+app.include_router(
+    monitoring.router, prefix="/api/v1", dependencies=[Depends(get_current_user)]
+)
+app.include_router(
+    ab_router, prefix="/api/v1", dependencies=[Depends(get_current_user)]
+)
+app.include_router(
+    models.router, prefix="/api/v1", dependencies=[Depends(get_current_user)]
+)
 
 
 @app.get("/")
