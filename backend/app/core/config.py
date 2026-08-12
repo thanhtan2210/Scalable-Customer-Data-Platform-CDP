@@ -80,6 +80,19 @@ API_KEY: str = os.getenv("API_KEY", "test-api-key")
 IS_PRODUCTION: bool = os.getenv("ENV", "development") == "production"
 ALLOWED_ORIGINS: str = os.getenv("ALLOWED_ORIGINS", "*")
 
+# JWT Authentication settings
+SECRET_KEY: str = os.getenv(
+    "SECRET_KEY",
+    "dev-secret-key-minimum-32-characters!!"
+)
+JWT_ALGORITHM: str = "HS256"
+ACCESS_TOKEN_EXPIRE_MINUTES: int = int(
+    os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "30")
+)
+REFRESH_TOKEN_EXPIRE_DAYS: int = int(
+    os.getenv("REFRESH_TOKEN_EXPIRE_DAYS", "7")
+)
+
 # Drift & Auto-Retraining settings
 DRIFT_AUTO_RETRAIN: bool = os.getenv("DRIFT_AUTO_RETRAIN", "False").lower() == "true"
 DRIFT_THRESHOLD: float = float(os.getenv("DRIFT_THRESHOLD", "0.2"))
