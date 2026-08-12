@@ -1,80 +1,106 @@
-# Phase 0: Local Development Setup (Lightweight)
+# Local Development Setup Guide (Bare-Metal)
 
-**Date:** June 2026
-**Context:** This document outlines the "Bare-Metal" local development strategy for the Universal AutoML Churn Platform. It is specifically designed for developers working on machines with limited resources (RAM/CPU) where running the full Docker Compose stack (MinIO, PostgreSQL, MLflow, FastAPI, Streamlit) simultaneously causes Out-Of-Memory (OOM) errors.
+This document outlines the local development setup for the CDP platform. It is designed for fast developer iteration without requiring Docker Compose or external cloud infrastructure.
 
-## 1. Architectural Strategy: The "Bare-Metal" Approach
+---
 
-While the project is fully Dockerized for production and robust local testing (`docker-compose.yml`), day-to-day development of the core AutoML engine can be done directly on the host operating system using Python Virtual Environments (`.venv`).
+## 1. Prerequisites
 
-**Benefits of this approach:**
-- **Zero Docker Overhead:** Saves 4GB-8GB of RAM.
-- **Fast Iteration:** Changes to Python files are instantly reflected via `uvicorn --reload` without rebuilding containers.
-- **Easy Debugging:** Python tracebacks and print statements appear directly in your primary terminal.
+- **Python**: 3.10 or higher
+- **PowerShell** (Windows) or **Bash** (Linux/macOS)
+- **Git**
 
-## 2. Dependency Management
+---
 
-To keep our production Docker images as lean as possible, dependencies are strictly segregated:
+## 2. Environment Setup
 
-- `requirements.txt`: Contains **ONLY** the libraries needed to run the application in production (e.g., FastAPI, Pandas, Scikit-learn, XGBoost).
-- `requirements-local.txt`: Inherits from `requirements.txt` but adds tools exclusively for local development (e.g., `pytest`, `black`, `ruff`, `mypy`).
+### Step 1: Clone Repository & Create Virtual Environment
 
-### Installation
-Ensure your virtual environment is activated, then run:
-
-```bash
-# Using Make
-make install-local
-
-# Or using pip directly
-pip install -r requirements-local.txt
+```powershell
+# Windows PowerShell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
 ```
 
-## 3. Running Services Locally (Without Docker)
+### Step 2: Install Dependencies
 
-To run the platform locally, we utilize fallback mechanisms (like SQLite instead of PostgreSQL).
-
-### Step 1: Start the FastAPI Backend
-Open a terminal, activate the `.venv`, and start the backend using SQLite as the database:
-
-**Windows (PowerShell):**
 ```powershell
-$env:DATABASE_URL="sqlite:///./churn_db.sqlite"
+pip install -r requirements.txt
+```
+
+---
+
+## 3. Environment Configuration (`.env`)
+
+Copy `.env.example` to `.env`:
+
+```powershell
+Copy-Item .env.example .env
+```
+
+Key local development configuration variables:
+
+```env
+# Database Settings (Local SQLite Fallback)
+DATABASE_URL=sqlite:///./test.db
+
+# Storage Settings (Local Filesystem Fallback)
+STORAGE_BACKEND=local
+LOCAL_STORAGE_DIR=./data/storage
+
+# MLflow Settings (Local Filesystem Registry)
+MLFLOW_TRACKING_URI=file:///./mlruns
+MLFLOW_EXPERIMENT_NAME=churn-prediction
+
+# AutoML Tuning Parameters
+OPTUNA_N_TRIALS=100
+OPTUNA_TIMEOUT_SECONDS=3600
+ENABLE_STACKING=true
+```
+
+---
+
+## 4. Running Services Locally
+
+### Step 1: Start the Backend REST API
+
+Run FastAPI backend with live reloading:
+
+```powershell
 uvicorn backend.app.main:app --reload --port 8000
 ```
 
-**Linux/Mac (Bash):**
-```bash
-DATABASE_URL="sqlite:///./churn_db.sqlite" uvicorn backend.app.main:app --reload --port 8000
-```
-*Verify: Open `http://localhost:8000/docs` in your browser to see the Swagger UI.*
+Verify backend is healthy:
+- Open browser: `http://localhost:8000/health` (Expected response: `{"status": "ok"}`)
+- API Documentation (Swagger): `http://localhost:8000/docs`
 
-### Step 2: Start the Analytics Hub
-Open a **second** terminal, activate the `.venv`, and start Streamlit:
+### Step 2: Start Local MLflow UI (Optional)
 
-```bash
-streamlit run analytics/streamlit_app.py
-```
-*Verify: The browser will automatically open `http://localhost:8501` showing the Analytics Hub.*
+In a **separate terminal window**:
 
-## 4. Testing Core Logic Independently
-
-Because the system follows Clean Architecture, you do not need to upload files via the API to test the core AutoML engine. You can write simple Python scripts in the root directory to test functions directly:
-
-```python
-# test_core.py
-import pandas as pd
-from backend.app.core.profiler.orchestrator import run_profiling
-
-# Load a local raw file directly
-df = pd.read_csv("data/raw/cleaned_telco.csv")
-
-# Test the profiler
-profiles = run_profiling(df)
-for p in profiles:
-    print(f"{p.name}: {p.inferred_role}")
+```powershell
+.\.venv\Scripts\Activate.ps1
+mlflow server --backend-store-uri file:///./mlruns --port 5000
 ```
 
-## 5. Artifact Management
+Verify MLflow UI: Open `http://localhost:5000`
 
-To keep the root directory clean, all auto-generated test artifacts (like JSON reports or coverage HTML) must be routed to the `tests/results/` directory. This directory is explicitly ignored by git in the `.gitignore` file.
+---
+
+## 5. Executing Tests
+
+### Run Unit & Integration Tests (pytest)
+
+```powershell
+pytest tests/ -q
+```
+
+### Run End-to-End Dataset Integration Suite
+
+```powershell
+# Fast smoke test (3 Optuna trials per model)
+python scripts/test_datasets_e2e.py --layer 4 --dataset bank --fast
+
+# Full E2E suite across all datasets
+python scripts/test_datasets_e2e.py --layer 4 --dataset all
+```

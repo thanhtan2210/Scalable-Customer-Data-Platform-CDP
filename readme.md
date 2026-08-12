@@ -1,106 +1,161 @@
 # Scalable Customer Data Platform (CDP)
 
 [![CDP Pipeline CI](https://github.com/thanhtan2210/Scalable-Customer-Data-Platform-CDP/actions/workflows/ci.yml/badge.svg)](https://github.com/thanhtan2210/Scalable-Customer-Data-Platform-CDP/actions/workflows/ci.yml)
-[![codecov](https://codecov.io/gh/thanhtan2210/Scalable-Customer-Data-Platform-CDP/graph/badge.svg?token=YOUR_TOKEN_HERE)](https://codecov.io/gh/thanhtan2210/Scalable-Customer-Data-Platform-CDP)
+![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue)
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.100%2B-009688)](https://fastapi.tiangolo.com)
+[![MLflow](https://img.shields.io/badge/MLflow-2.0%2B-0194E2)](https://mlflow.org)
 
-A comprehensive platform designed for large-scale customer data processing (target: 50M users), catering to Data Engineering (DE), Data Science (DS), and MLOps requirements.
+An enterprise-grade Customer Data Platform designed for customer data processing, automated statistical/semantic profiling, production AutoML churn modelling, multi-task learning, and batch inference serving.
+
+---
 
 ## 🌟 Key Features
-- **Unified CLI**: Manage the entire project lifecycle via a single `launcher.py` script.
-- **Hybrid Execution**: Supports full orchestration via Docker or a standalone **Local Mode** for environments without S3/MinIO infrastructure.
-- **Robust ETL**: Automated data cleaning, schema normalization, and Data Quality (SLA) validation.
-- **ML Lifecycle**: Experiment tracking with MLflow and model serving via FastAPI.
-- **Business Dashboard**: Interactive Streamlit interface with detailed insights and data visualizations.
+
+- **Automated Data Profiling Engine**: 3-layer profiling (Statistical, Semantic Regex, LLM-assisted) for instant data health assessment, semantic role inference (ID, Target, Categorical, Numeric, Text), and leakage detection.
+- **Advanced AutoML & Model Routing**: Multi-candidate hyperparameter search using **Optuna** across **LightGBM**, **CatBoost**, **XGBoost**, **Random Forest**, and **Logistic Regression**, integrated with **MedianPruner**, automated class imbalance handling (`class_weight='balanced'`), and post-search **Stacking Ensembles**.
+- **Multi-Task Learning (MTL)**: PyTorch-based neural backbone for simultaneous Churn Prediction (binary classification) and Customer Performance Index / CPI (regression) with Continual Learning capability.
+- **RESTful API Core**: Clean FastAPI backend serving dataset uploads, async job execution, real-time drift monitoring (KS-test, PSI), and batch/single inference endpoints with 10-minute double-checked model caching.
+- **End-to-End Test Suite**: Automated 4-layer integration testing (`scripts/test_datasets_e2e.py`) validating Upload $\rightarrow$ Profile $\rightarrow$ Train $\rightarrow$ Batch Predict across multiple benchmark datasets.
 
 ---
 
 ## 🚀 Quick Start
 
 ### 1. Environment Setup
-- Python 3.9+
-- Install dependencies: `pip install -r requirements.txt`
 
-### 2. Infrastructure (Optional)
-If Docker is available: `docker-compose up -d`
-*(The project automatically falls back to local Parquet storage if Docker/MinIO is not detected).*
-
-### 3. Execute Pipeline & Training
-```powershell
-# Run Data Pipeline (Cleaning & Normalization)
-python launcher.py pipeline
-
-# Train Model & Log results to MLflow
-python launcher.py train
-```
-
-### 4. Launch Services
-The project uses specific default ports to avoid system conflicts:
-- **Churn API**: `http://localhost:8001/docs`
-- **A/B Testing Service**: `http://localhost:8081/docs`
-- **MLflow UI**: `http://localhost:5000`
-- **Sales Dashboard**: `http://localhost:8501`
+Ensure Python 3.10+ is installed:
 
 ```powershell
-python launcher.py churn-api
-python launcher.py ab-service
-python launcher.py dashboard
+# Clone the repository
+git clone https://github.com/thanhtan2210/Scalable-Customer-Data-Platform-CDP.git
+cd Scalable-Customer-Data-Platform-CDP
+
+# Create & activate virtual environment (Windows PowerShell)
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+
+# Install core & local development dependencies
+pip install -r requirements.txt
+```
+
+### 2. Configure Environment
+
+Copy `.env.example` to `.env`:
+
+```powershell
+Copy-Item .env.example .env
+```
+
+*Default fallback configuration uses local SQLite (`test.db`) and local filesystem storage — no Docker or MinIO required for quick development.*
+
+### 3. Launch Services
+
+Start the backend API server:
+
+```powershell
+# Start FastAPI server on port 8000
+uvicorn backend.app.main:app --reload --port 8000
+```
+
+Open interactive Swagger API Documentation at: `http://localhost:8000/docs`
+
+### 4. Run End-to-End Dataset Integration Test Suite
+
+With the server running in one terminal, execute the dataset test suite:
+
+```powershell
+# Quick smoke test on Bank Churn dataset (Fast 3-trial Optuna mode)
+python scripts/test_datasets_e2e.py --layer 4 --dataset bank --fast
+
+# Full E2E pipeline test on all verified datasets
+python scripts/test_datasets_e2e.py --layer 4 --dataset all
 ```
 
 ---
 
-## 🏗 Architecture & Data Flow
+## 🏗 System Architecture & Flow
 
-The platform is designed around a modular microservice architecture. For a detailed component description and interactive Mermaid flowcharts, please refer to the [System Architecture Document](docs/architecture/ARCHITECTURE.md).
+```mermaid
+graph TD
+    A[Client / App] -->|POST /api/v1/datasets/upload| B[FastAPI Backend]
+    B -->|Save raw file| C[(Storage: R2 / S3 / Local)]
+    B -->|Metadata| D[(SQLite / PostgreSQL)]
+    
+    A -->|POST /api/v1/datasets/{id}/profile| B
+    B -->|Run 3-Layer Profiling| E[Profiler Engine]
+    E -->|Statistical, Semantic, Leakage Check| E
+    E -->|Generate Validation Schema| F[Pandera Schema Gen]
+    
+    A -->|POST /api/v1/jobs/{id}/train| B
+    B -->|Trigger Async Job| G[AutoML / PyTorch MTL Engine]
+    G -->|Model Routing & Optuna Optimization| H[Optuna 100 Trials + Pruning]
+    H -->|Candidate Models: LightGBM / CatBoost / XGB / RF| H
+    H -->|Build Stacking Ensemble| I[Stacking Meta-Learner]
+    I -->|Log Params, Metrics & Artifacts| J[(MLflow Registry)]
+    
+    A -->|POST /api/v1/predict/batch| B
+    B -->|Thread-safe Model Cache| K[Serving Layer]
+    K -->|Load Model & Threshold| J
+    K -->|Drift Check: KS & PSI| L[Drift Detector]
+```
 
-### Core Flow:
-1. **Ingest & Validate**: Clients upload files → Ingestion parses formats → Pandera validates schema boundaries.
-2. **Profile & Synthesize**: Statistics & semantic profiling identify types/leakage. Target synthesizer builds Customer Performance Index (CPI).
-3. **AutoML & Train**: Optuna tunes model candidates (XGBoost/RF/LogReg) or PyTorch MTL train is triggered. Results logged to MLflow.
-4. **Serve & Monitor**: Model cache holds model instances (10-min TTL). Drift detector processes inference logs and schedules auto-retraining.
-
----
-
-## 🛠 Project Structure
-- `backend/app/core/etl/`: Logic for data cleaning, normalization, lineage, and SLA checks.
-- `backend/app/core/profiler/`: Statistical, semantic, and LLM-assisted metadata profiling.
-- `backend/app/core/training/`: AutoML (Optuna) and Multi-Task Learning (PyTorch) pipelines.
-- `backend/app/core/serving/`: Prediction cache, model versioning, drift checks, and A/B testing.
-- `backend/app/api/`: FastAPI REST endpoints (`/datasets`, `/jobs`, `/predict`).
-- `analytics/`: Streamlit business intelligence dashboard.
-- `data/parquet/processed/`: The "Single Source of Truth" storage for processed data.
-- `tests/`: 153+ automated tests (unit, integration, and E2E).
-
----
-
-## 📊 Data Description
-The sample Telco Churn dataset includes 7,043 records with key features:
-- **CustomerID**: Unique identifier.
-- **Tenure**: Months with the company.
-- **MonthlyCharges**: Normalized monthly fee.
-- **TotalCharges**: Cumulative charges.
-- **Churn**: 1 (Churned), 0 (Retained).
-- **CLTV**: Customer Lifetime Value.
+Detailed component specifications are documented in [docs/architecture/ARCHITECTURE.md](docs/architecture/ARCHITECTURE.md).
 
 ---
 
-## 📈 Business Impact (Offline Evaluation)
-Based on `reports/offline_evaluation.json`:
-- **Model Accuracy**: ~93.5%
-- **ROC-AUC**: 0.99
-- **Estimated ROI**: 263.09 (Based on a 30% outreach success rate and $5/contact cost).
+## 📁 Project Structure
 
-### ⚡ API Latency Benchmark (Local SQLite & Cache)
-Based on `backend/app/reports/benchmark_results.json` (measured over 100 requests of batch size 10):
-- **p50 Latency**: 400.19 ms
-- **p95 Latency**: 632.17 ms
-- **p99 Latency**: 771.45 ms
-- **Mean Latency**: 426.15 ms
-- **Throughput**: 2.35 requests/second
+```
+Scalable-Customer-Data-Platform-CDP/
+├── backend/app/
+│   ├── api/v1/          # REST API endpoints (datasets, jobs, predict, monitoring)
+│   ├── core/
+│   │   ├── etl/         # Data cleaning, schema normalization, SLA checks
+│   │   ├── profiler/    # Statistical & semantic profiling, CPI target synthesis
+│   │   ├── pipeline/    # Scikit-learn preprocessing pipeline builder & Pandera schemas
+│   │   ├── training/    # AutoML engine (Optuna), model router, PyTorch MTL trainer
+│   │   └── serving/     # Prediction cache, drift detection, threshold calibration
+│   └── db/              # SQLAlchemy ORM models & Alembic migrations
+├── data/
+│   └── dataset/         # Benchmark dataset catalog & CSV data files
+├── docs/                # Architectural docs & step-by-step guides
+│   ├── architecture/    # Deep dive system architecture
+│   └── guides/          # Local setup, AutoML guide, E2E testing, adding datasets
+├── scripts/             # Integration test scripts & benchmark tools
+├── analytics/           # Analytics & visual dashboard scripts
+├── docker-compose.yml   # Multi-service production stack definition
+└── requirements.txt     # Python dependencies
+```
 
 ---
 
-## 📝 Technical Notes (Troubleshooting)
-1. **SLA Validation**: The `Churn Reason` column has a high null rate (~73%), which is expected for customers who haven't churned. The system is configured to accept this.
-2. **Local Fallback**: If MinIO connection fails, the Dashboard automatically reads from `data/parquet/processed/cleaned_telco.parquet`.
-3. **MLflow**: If not using Docker, start the local server with:
-   `mlflow server --backend-store-uri file:///./mlruns --port 5000`
+## 📊 Dataset Catalog & Benchmarks
+
+The CDP platform includes a standardized dataset catalog (`data/dataset/catalog.yaml`) for cross-domain model benchmark evaluation:
+
+| Dataset ID | Domain / Source | Size | Target Column | Key Characteristics | Status |
+|---|---|---|---|---|---|
+| `bank` | Banking (Kaggle) | 10,000 x 14 | `Exited` | Tabular dense, target synonym testing | Verified |
+| `telco` | Telecom (IBM) | 7,043 x 21 | `Churn` | Categorical & numerical mixed, spaces in numeric | Verified |
+| `ecommerce` | E-Commerce | 5,630 x 20 | `Churn` | Imbalanced churn rate (~17%), missing values | Verified |
+| `bank_marketing_full` | Banking Direct Marketing | 45,211 x 17 | `y` | Semicolon separator, binary target | Verified |
+| `credit_card` | Credit Card Customers | 10,127 x 23 | `Attrition_Flag` | Rich behavioral features, high-AUC target (>0.93) | Pending data file |
+| `ibm_hr_attrition` | HR Analytics | 1,470 x 35 | `Attrition` | HR employee attrition benchmark | Pending data file |
+
+For instructions on adding new datasets to the catalog, see [docs/guides/adding_datasets.md](docs/guides/adding_datasets.md).
+
+---
+
+## 📚 Documentation & Guides
+
+- 📐 **[System Architecture](docs/architecture/ARCHITECTURE.md)** — Detailed microservice design & ML lifecycle flow.
+- 💻 **[Local Setup Guide](docs/guides/local_setup.md)** — Step-by-step lightweight local environment setup.
+- 🤖 **[AutoML & Training Engine Guide](docs/guides/automl.md)** — Hyperparameter search space, model routing logic, and stacking ensemble details.
+- 🧪 **[End-to-End Testing Guide](docs/guides/e2e_testing.md)** — Running & extending the multi-dataset integration test suite.
+- 📥 **[Adding New Datasets Guide](docs/guides/adding_datasets.md)** — How to register raw datasets into the catalog.
+
+---
+
+## 📝 License
+
+Distributed under the MIT License. See `LICENSE` for more information.
