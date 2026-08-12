@@ -1,0 +1,81 @@
+# Dataset Catalog for CDP End-to-End Testing & Profiling Benchmark
+# Add new datasets here to automatically include them in tests and benchmarks.
+
+datasets:
+  - id: telco
+    name: "Telco Customer Churn"
+    file: "data/dataset/telco-customer-churn/Telco_Customer_Churn.csv"
+    separator: ","
+    target: "Churn"
+    target_type: "string_binary"
+    id_columns: ["customerID"]
+    expected_nulls: true
+    notes: "IBM/Kaggle benchmark dataset. TotalCharges has space values."
+    status: "verified"
+
+  - id: bank
+    name: "Bank Customer Churn (Churn Modelling)"
+    file: "data/dataset/bank-customer-churn/Churn_Modelling.csv"
+    separator: ","
+    target: "Exited"
+    target_type: "int_binary"
+    id_columns: ["RowNumber", "CustomerId", "Surname"]
+    expected_nulls: false
+    notes: "Target 'Exited' tested for synonym detection."
+    status: "verified"
+
+  - id: ecommerce
+    name: "E-Commerce Customer Churn"
+    file: "data/dataset/ecommerce-churn/E_Commerce_Dataset.csv"
+    separator: ","
+    target: "Churn"
+    target_type: "int_binary"
+    id_columns: ["CustomerID"]
+    expected_nulls: true
+    notes: "Imbalanced churn rate (~17%) with missing values."
+    status: "verified"
+
+  - id: bank_marketing_full
+    name: "Bank Marketing (Full)"
+    file: "data/dataset/bank-marketing/bank/bank-full.csv"
+    separator: ";"
+    target: "y"
+    target_type: "string_binary"
+    id_columns: []
+    expected_nulls: false
+    notes: "Semicolon separator. Target 'y' (yes/no). 45,211 rows."
+    status: "verified"
+
+  - id: bank_marketing_additional
+    name: "Bank Marketing Additional (Full)"
+    file: "data/dataset/bank-marketing/bank-additional/bank-additional/bank-additional-full.csv"
+    separator: ";"
+    target: "y"
+    target_type: "string_binary"
+    id_columns: []
+    expected_nulls: false
+    notes: "Semicolon separator. 21 features. 41,188 rows."
+    status: "verified"
+
+  # ── High-AUC datasets (typically >0.92) ──────────────────────────
+  - id: credit_card
+    name: "Credit Card Customer Churn"
+    file: "data/dataset/credit-card-churn/BankChurners.csv"
+    separator: ","
+    target: "Attrition_Flag"
+    target_type: "string_binary"
+    id_columns: ["CLIENTNUM"]
+    expected_nulls: false
+    notes: "Kaggle: sakshigoyal7/credit-card-customers. 10,127 rows x 23 behavioral cols. AUC typically 0.95+ with LightGBM/XGBoost. Positive class = 'Attrited Customer'."
+    status: "verified"
+
+  - id: ibm_hr_attrition
+    name: "IBM HR Employee Attrition"
+    file: "data/dataset/ibm-hr-attrition/WA_Fn-UseC_-HR-Employee-Attrition.csv"
+    separator: ","
+    target: "Attrition"
+    target_type: "string_binary"
+    id_columns: ["EmployeeNumber"]
+    expected_nulls: false
+    notes: "Kaggle: pavansubhasht/ibm-hr-analytics-attrition-dataset. 1,470 rows x 35 features. Classic HR churn benchmark. Positive class = 'Yes'."
+    status: "verified"
