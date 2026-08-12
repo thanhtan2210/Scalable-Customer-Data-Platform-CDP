@@ -73,3 +73,6 @@ requirements-local.txt
 # ── Personal notes (moved to docs/notes/) ────
 note.md
 .openscience
+
+# ── CatBoost training artifacts ──────────────
+catboost_info/
