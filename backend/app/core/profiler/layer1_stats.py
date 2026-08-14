@@ -9,6 +9,10 @@ def infer_dtype_manual(series: pd.Series) -> str:
     if series.empty:
         return "object"
 
+    # Check bool first because is_numeric_dtype(bool) is True in pandas
+    if pd.api.types.is_bool_dtype(series):
+        return "bool"
+
     # Try numeric
     if pd.api.types.is_numeric_dtype(series):
         return "float64" if pd.api.types.is_float_dtype(series) else "int64"
@@ -52,7 +56,11 @@ def profile_column(series: pd.Series) -> dict:
     elif cardinality_ratio > 0.9 and inferred_dtype in ["object", "int64"]:
         role = DataRole.ID
         confidence = 0.9
+    elif inferred_dtype == "bool":
+        role = DataRole.CATEGORICAL
+        confidence = 0.95
     elif inferred_dtype in ["float64", "int64"]:
+
         if unique_count <= 15:
             role = DataRole.CATEGORICAL
             confidence = 0.6
