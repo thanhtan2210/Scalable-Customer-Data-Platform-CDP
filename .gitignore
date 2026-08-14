@@ -4,9 +4,13 @@ __pycache__/
 .venv/
 .pytest_cache/
 .ruff_cache/
+.hypothesis/
+.coverage
+htmlcov/
 
 # Data & Models
 data/
+!data/dataset/catalog.yaml
 mlruns/
 mlruns_test/
 mlflow.db
@@ -14,10 +18,15 @@ models/
 ci_outputs/
 tests/results/
 *.db
+test_*.db
+test_*.txt
+test_*.json
+tests/**/*.db
 
 # Dependencies
 node_modules/
 airflow-requirements.txt
+requirements-local.txt
 
 # Windows Binaries & Logs
 bin/
@@ -26,53 +35,28 @@ hadoop_libs/
 *.dll
 *.log
 
-# IDE settings
+# IDE & OS settings
 .vscode/
 .idea/
+.DS_Store
+Thumbs.db
 text_cicd.txt
 test_cicd.txt
-
-# OS artifacts
-.DS_Store
-Thumbs.db  
 
 # External Binaries
 scripts/Eclipse Adoptium/
 scripts/hadoop/
 
+# Environment & Secrets
 .env
-.coverage
-htmlcov/
 
+# Notes & Private Docs
 note.md
 PROJECT_CONTEXT.md
 composite_target_design.md
-data/
-
-# Academic paper preparation drafts (Private)
+.openscience
 docs/paper/
 
-# ── Test artifacts ──────────────────────────
-test_*.db
-test_*.txt
-test_*.json
-
-# ── Local MLflow runs ────────────────────────
-mlruns/
-mlruns_test/
-
-# ── Pytest & coverage ────────────────────────
-.hypothesis/
-.pytest_cache/
-.coverage
-htmlcov/
-
-# ── Local dev requirements ───────────────────
-requirements-local.txt
-
-# ── Personal notes (moved to docs/notes/) ────
-note.md
-.openscience
-
-# ── CatBoost training artifacts ──────────────
-catboost_info/
+# CatBoost training artifacts
+catboost_info/
+
