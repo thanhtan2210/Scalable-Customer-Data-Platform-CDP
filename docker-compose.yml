@@ -90,7 +90,7 @@ services:
       dockerfile: infra/dockerfiles/backend.Dockerfile
       target: dev
     container_name: churn_platform_api
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8000
+    command: uvicorn backend.app.main:app --host 0.0.0.0 --port 8000
     ports:
       - "8000:8000"
     env_file: .env

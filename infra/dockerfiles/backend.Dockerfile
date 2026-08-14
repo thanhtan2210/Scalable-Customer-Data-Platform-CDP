@@ -21,8 +21,8 @@ RUN pip install --no-cache-dir \
     https://download.pytorch.org/whl/cpu
 
 # Copy app code
-COPY backend/app ./app
-RUN touch app/__init__.py
+COPY backend ./backend
+RUN touch backend/__init__.py backend/app/__init__.py
 
 # Security: chạy với non-root user
 RUN addgroup --system --gid 1001 appgroup \
@@ -38,7 +38,7 @@ EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 \
   CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')" || exit 1
 
-CMD ["gunicorn", "--workers", "4", "--worker-class", "uvicorn.workers.UvicornWorker", "--bind", "0.0.0.0:8000", "app.main:app"]
+CMD ["gunicorn", "--workers", "4", "--worker-class", "uvicorn.workers.UvicornWorker", "--bind", "0.0.0.0:8000", "backend.app.main:app"]
 
 # Stage 3: Dev (không có torch — dùng local .venv)
 FROM base AS dev
@@ -46,8 +46,8 @@ ENV ENABLE_LLM_LAYER=false
 ENV TORCH_AVAILABLE=false
 
 # Copy app code
-COPY backend/app ./app
-RUN touch app/__init__.py
+COPY backend ./backend
+RUN touch backend/__init__.py backend/app/__init__.py
 
 # Security: chạy với non-root user
 RUN addgroup --system --gid 1001 appgroup \
@@ -63,4 +63,4 @@ EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 \
   CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')" || exit 1
 
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "backend.app.main:app", "--host", "0.0.0.0", "--port", "8000"]

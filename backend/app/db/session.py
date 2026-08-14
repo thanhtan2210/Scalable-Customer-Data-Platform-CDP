@@ -2,11 +2,9 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import QueuePool
 import os
-from ..core.config import settings, IS_PRODUCTION
+from ..core.config import DATABASE_URL as CONFIG_DATABASE_URL, IS_PRODUCTION
 
-DATABASE_URL = os.getenv(
-    "DATABASE_URL", "postgresql://postgres:password@localhost:5432/churn_db"
-)
+DATABASE_URL = os.getenv("DATABASE_URL", CONFIG_DATABASE_URL)
 
 # Production settings
 if IS_PRODUCTION:

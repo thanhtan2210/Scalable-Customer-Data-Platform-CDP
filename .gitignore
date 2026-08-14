@@ -22,6 +22,10 @@ test_*.db
 test_*.txt
 test_*.json
 tests/**/*.db
+*.joblib
+*.pkl
+backend/app/core/training/*.joblib
+backend/app/core/training/*.pkl
 
 # Dependencies
 node_modules/

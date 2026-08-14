@@ -27,6 +27,13 @@ from pathlib import Path
 root_path = Path(__file__).resolve().parents[4]
 sys.path.insert(0, str(root_path))
 
+try:
+    from dotenv import load_dotenv
+
+    load_dotenv(dotenv_path=root_path / ".env")
+except ImportError:
+    pass
+
 from backend.app.db.models import Base
 
 target_metadata = Base.metadata

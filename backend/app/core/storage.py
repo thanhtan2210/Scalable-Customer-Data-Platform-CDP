@@ -22,7 +22,10 @@ class StorageClient:
     def __init__(self):
         self.mode = STORAGE_MODE.lower()
         self.bucket = S3_BUCKET_NAME
-        self.local_base_path = Path("data")
+        _default_data_path = Path(__file__).resolve().parents[3] / "data"
+        self.local_base_path = Path(
+            os.getenv("LOCAL_DATA_PATH", str(_default_data_path))
+        ).resolve()
 
         if self.mode == "s3":
             self.s3 = boto3.client(
