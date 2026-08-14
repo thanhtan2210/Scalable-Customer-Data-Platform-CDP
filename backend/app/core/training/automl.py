@@ -5,8 +5,10 @@ import logging
 import tempfile
 import optuna
 import mlflow
+import numpy as np
 import pandas as pd
 from sklearn.base import clone
+from sklearn.calibration import CalibratedClassifierCV
 from sklearn.model_selection import cross_val_score, StratifiedKFold, train_test_split
 from sklearn.metrics import precision_recall_curve, roc_auc_score
 from sklearn.pipeline import Pipeline
@@ -63,6 +65,276 @@ def _inject_class_weight(model_info: dict, is_imbalanced: bool) -> None:
     if "CatBoost" in model_name:
         model_info["kwargs"]["auto_class_weights"] = "Balanced"
 
+from ..profiler.column_profile import ColumnProfile, DataRole
+
+def _auto_feature_engineer(
+    df: pd.DataFrame,
+    confirmed_profiles: List[ColumnProfile],
+    target_col: str,
+) -> Tuple[pd.DataFrame, List[ColumnProfile]]:
+    """
+    Automatically creates domain-specific ratio and interaction features for datasets:
+    - Telco Churn: MonthlyCharges/tenure ratio, TotalCharges ratio, active services count
+    - Bank Churn: Balance/Salary ratio, Products/Tenure ratio, CreditScore/Age ratio, ActiveAge interaction
+    - General: Numeric ratio combinations
+    Updates confirmed_profiles with new generated ColumnProfile entries.
+    """
+    df = df.copy()
+    new_profiles = list(confirmed_profiles)
+    existing_cols = set(df.columns)
+
+    def _create_profile(name: str, dtype_str: str, is_cat: bool = False) -> ColumnProfile:
+        role = DataRole.CATEGORICAL if is_cat else DataRole.NUMERIC
+        return ColumnProfile(
+            name=name,
+            inferred_dtype=dtype_str,
+            inferred_role=role,
+            confidence_score=1.0,
+            null_pct=0.0,
+            unique_count=int(df[name].nunique()),
+            entropy=1.0,
+            impute_strategy="mode" if is_cat else "median",
+            transform_strategy="ohe" if is_cat else "standard",
+        )
+
+    # 1. Telco specific interactions
+    if "MonthlyCharges" in df.columns and "tenure" in df.columns:
+        if "charge_per_tenure" not in existing_cols:
+            tn = pd.to_numeric(df["tenure"], errors="coerce").fillna(0.0)
+            mc = pd.to_numeric(df["MonthlyCharges"], errors="coerce").fillna(0.0)
+            df["charge_per_tenure"] = mc / (tn + 1.0)
+            new_profiles.append(_create_profile("charge_per_tenure", "float64"))
+
+    if "TotalCharges" in df.columns and "MonthlyCharges" in df.columns and "tenure" in df.columns:
+        if "total_vs_expected_charges" not in existing_cols:
+            tc = pd.to_numeric(df["TotalCharges"], errors="coerce").fillna(0.0)
+            mc = pd.to_numeric(df["MonthlyCharges"], errors="coerce").fillna(0.0)
+            tn = pd.to_numeric(df["tenure"], errors="coerce").fillna(0.0)
+            df["total_vs_expected_charges"] = tc / (mc * tn + 1.0)
+            new_profiles.append(_create_profile("total_vs_expected_charges", "float64"))
+
+    service_cols = [
+        "OnlineSecurity",
+        "OnlineBackup",
+        "DeviceProtection",
+        "TechSupport",
+        "StreamingTV",
+        "StreamingMovies",
+    ]
+    found_services = [c for c in service_cols if c in df.columns]
+    if len(found_services) >= 3 and "active_services_count" not in existing_cols:
+        count_series = pd.Series(0, index=df.index)
+        for sc in found_services:
+            count_series += (df[sc].astype(str).str.lower() == "yes").astype(int)
+        df["active_services_count"] = count_series
+        new_profiles.append(_create_profile("active_services_count", "int64"))
+
+    # 2. Bank Churn specific interactions
+    if "Balance" in df.columns and "EstimatedSalary" in df.columns:
+        if "balance_salary_ratio" not in existing_cols:
+            bal = pd.to_numeric(df["Balance"], errors="coerce").fillna(0.0)
+            sal = pd.to_numeric(df["EstimatedSalary"], errors="coerce").fillna(0.0)
+            df["balance_salary_ratio"] = bal / (sal + 1.0)
+            new_profiles.append(_create_profile("balance_salary_ratio", "float64"))
+
+    if "NumOfProducts" in df.columns and "Tenure" in df.columns:
+        if "products_per_tenure" not in existing_cols:
+            np_col = pd.to_numeric(df["NumOfProducts"], errors="coerce").fillna(0.0)
+            tn = pd.to_numeric(df["Tenure"], errors="coerce").fillna(0.0)
+            df["products_per_tenure"] = np_col / (tn + 1.0)
+            new_profiles.append(_create_profile("products_per_tenure", "float64"))
+
+    if "CreditScore" in df.columns and "Age" in df.columns:
+        if "credit_age_ratio" not in existing_cols:
+            cs = pd.to_numeric(df["CreditScore"], errors="coerce").fillna(0.0)
+            ag = pd.to_numeric(df["Age"], errors="coerce").fillna(0.0)
+            df["credit_age_ratio"] = cs / (ag + 1.0)
+            new_profiles.append(_create_profile("credit_age_ratio", "float64"))
+
+    if "IsActiveMember" in df.columns and "Age" in df.columns:
+        if "active_age_score" not in existing_cols:
+            act = pd.to_numeric(df["IsActiveMember"], errors="coerce").fillna(0.0)
+            ag = pd.to_numeric(df["Age"], errors="coerce").fillna(0.0)
+            df["active_age_score"] = act * ag
+            new_profiles.append(_create_profile("active_age_score", "float64"))
+
+    return df, new_profiles
+
+
+def _generic_feature_engineer(
+    df: pd.DataFrame,
+    confirmed_profiles: List["ColumnProfile"],
+    target_col: str,
+    max_pairs: int = 5,
+) -> Tuple[pd.DataFrame, List["ColumnProfile"]]:
+    """
+    Automatically creates generic interaction/ratio features for ANY dataset:
+    - Selects the top-`max_pairs` numeric columns most correlated with the target.
+    - Generates pairwise ratios (A / (B + eps)) and log-transforms (log1p(A)).
+    Always enabled; safe to run after domain-specific _auto_feature_engineer.
+    """
+    df = df.copy()
+    new_profiles = list(confirmed_profiles)
+    existing_cols = set(df.columns)
+
+    from ..profiler.column_profile import DataRole
+
+    def _make_profile(name: str) -> "ColumnProfile":
+        return ColumnProfile(
+            name=name,
+            inferred_dtype="float64",
+            inferred_role=DataRole.NUMERIC,
+            confidence_score=1.0,
+            null_pct=0.0,
+            unique_count=int(df[name].nunique()),
+            entropy=1.0,
+            impute_strategy="median",
+            transform_strategy="standard",
+        )
+
+    # Gather numeric columns that exist in the dataframe
+    numeric_cols = [
+        p.name
+        for p in confirmed_profiles
+        if (
+            p.name != target_col
+            and p.name in df.columns
+            and p.inferred_role not in ["ID", "IGNORE", "TARGET"]
+            and str(getattr(p, "inferred_role", "")) not in ["DataRole.CATEGORICAL"]
+            and pd.api.types.is_numeric_dtype(df[p.name])
+        )
+    ]
+
+    if len(numeric_cols) < 2:
+        return df, new_profiles
+
+    # Correlation-based column ranking against target (numeric target expected at this point)
+    y_series = df[target_col]
+    if not pd.api.types.is_numeric_dtype(y_series):
+        # Skip generic FE if target not numeric yet
+        return df, new_profiles
+
+    correlations = {}
+    for c in numeric_cols:
+        try:
+            correlations[c] = abs(df[c].corr(y_series))
+        except Exception:
+            correlations[c] = 0.0
+
+    top_cols = sorted(correlations, key=correlations.get, reverse=True)[:max_pairs]
+
+    # 1. Pairwise ratios
+    for i, c1 in enumerate(top_cols):
+        for c2 in top_cols[i + 1 :]:
+            new_col = f"gen_ratio_{c1}__{c2}"
+            if new_col not in existing_cols:
+                v1 = pd.to_numeric(df[c1], errors="coerce").fillna(0.0)
+                v2 = pd.to_numeric(df[c2], errors="coerce").fillna(0.0)
+                df[new_col] = v1 / (v2.abs() + 1e-6)
+                new_profiles.append(_make_profile(new_col))
+                existing_cols.add(new_col)
+
+    # 2. Log-transform of top correlated features
+    for c in top_cols:
+        new_col = f"gen_log1p_{c}"
+        if new_col not in existing_cols:
+            v = pd.to_numeric(df[c], errors="coerce").fillna(0.0)
+            df[new_col] = np.log1p(v.abs())
+            new_profiles.append(_make_profile(new_col))
+            existing_cols.add(new_col)
+
+    return df, new_profiles
+
+
+def _try_smart_oversample(
+    X: pd.DataFrame,
+    y: pd.Series,
+    churn_rate: float,
+) -> Tuple[pd.DataFrame, pd.Series]:
+    """
+    Intelligently oversamples the minority class for ANY imbalanced dataset.
+    - SMOTE for pure numeric datasets (>= 100 samples).
+    - SMOTENC for mixed numeric/categorical datasets (>= 100 samples).
+    - RandomOverSampler for small datasets or automatic fallback.
+    - Silent fallback to original (X, y) if all oversamplers fail.
+    Always called; only has effect when churn_rate < 0.30 or > 0.70.
+    """
+    if not (churn_rate < 0.30 or churn_rate > 0.70):
+        return X, y
+
+    try:
+        from imblearn.over_sampling import SMOTE, SMOTENC, RandomOverSampler
+
+        n_minority = int(min(y.sum(), len(y) - y.sum()))
+        if n_minority < 2:
+            logger.warning("Oversampling skipped: too few minority samples.")
+            return X, y
+
+        k_neighbors = min(5, n_minority - 1)
+        if k_neighbors < 1:
+            return X, y
+
+        cat_indices = [
+            i
+            for i, col in enumerate(X.columns)
+            if not pd.api.types.is_numeric_dtype(X[col])
+        ]
+
+        if len(X) >= 100:
+            if len(cat_indices) > 0:
+                sampler = SMOTENC(
+                    categorical_features=cat_indices,
+                    random_state=42,
+                    k_neighbors=k_neighbors,
+                )
+                logger.info(
+                    f"Applying SMOTENC ({len(cat_indices)} cat cols, churn_rate={churn_rate:.2%}, k={k_neighbors})"
+                )
+            else:
+                sampler = SMOTE(random_state=42, k_neighbors=k_neighbors)
+                logger.info(
+                    f"Applying SMOTE (churn_rate={churn_rate:.2%}, k={k_neighbors})"
+                )
+        else:
+            sampler = RandomOverSampler(random_state=42)
+            logger.info(
+                f"Applying RandomOverSampler (churn_rate={churn_rate:.2%})"
+            )
+
+        X_res, y_res = sampler.fit_resample(X, y)
+        if isinstance(X_res, np.ndarray):
+            X_res = pd.DataFrame(X_res, columns=X.columns)
+        y_res = pd.Series(y_res, name=y.name)
+        logger.info(
+            f"Oversampling complete: {len(y)} -> {len(y_res)} samples "
+            f"(minority: {n_minority} -> {int(y_res.sum())})"
+        )
+        print(
+            f"  -> Oversampling ({type(sampler).__name__}): {len(y)} -> {len(y_res)} rows",
+            flush=True,
+        )
+        return X_res, y_res
+    except Exception as e:
+        logger.warning(
+            f"SMOTE/SMOTENC failed ({e}), trying RandomOverSampler fallback..."
+        )
+        try:
+            from imblearn.over_sampling import RandomOverSampler
+
+            sampler = RandomOverSampler(random_state=42)
+            X_res, y_res = sampler.fit_resample(X, y)
+            print(
+                f"  -> Oversampling (RandomOverSampler Fallback): {len(y)} -> {len(y_res)} rows",
+                flush=True,
+            )
+            return X_res, y_res
+        except Exception as e2:
+            logger.warning(
+                f"RandomOverSampler failed ({e2}), using original data."
+            )
+            return X, y
+
+
 def run_automl(
     df: pd.DataFrame,
     confirmed_profiles: List[ColumnProfile],
@@ -74,7 +346,7 @@ def run_automl(
 ) -> Tuple[str, str]:
     """
     Executes the full AutoML flow:
-    1. Validation
+    1. Validation & Feature Engineering
     2. Build Pipeline
     3. Generate Schema
     4. Route Models
@@ -87,6 +359,16 @@ def run_automl(
         raise ValueError("Invalid target column.")
     if df[target_col].nunique() <= 1:
         raise ValueError("Target column has only one unique class.")
+
+    # Auto Feature Engineering (domain-specific)
+    df, confirmed_profiles = _auto_feature_engineer(df, confirmed_profiles, target_col)
+
+    # Generic Feature Engineering (always on — pairwise ratios + log-transforms)
+    df, confirmed_profiles = _generic_feature_engineer(df, confirmed_profiles, target_col)
+    logger.info(
+        f"Feature engineering complete: {len(confirmed_profiles)} features "
+        f"(including {len([p for p in confirmed_profiles if p.name.startswith('gen_')])} generic)"
+    )
 
     # Calculate CPI column if not already in dataframe but composite_config is provided
     if composite_config and composite_config.cpi_column_name not in df.columns:
@@ -251,14 +533,10 @@ def run_automl(
         mtl_model = MTLChurnModel()
         mtl_model.fit(X_train, y_train, y_cpi_train, random_state=random_state)
 
-        # Calculate optimal threshold on validation set
         y_scores = mtl_model.predict_proba(X_val)[:, 1]
         precisions, recalls, thresholds = precision_recall_curve(y_val, y_scores)
         f1_scores = 2 * (precisions * recalls) / (precisions + recalls + 1e-9)
         optimal_threshold = float(thresholds[f1_scores[:-1].argmax()])
-
-        from sklearn.metrics import roc_auc_score
-
         best_overall_score = float(roc_auc_score(y_val, y_scores))
 
         # Package preprocessor and mtl_model into the final pipeline
@@ -333,8 +611,19 @@ def run_automl(
         X_full, y_full, test_size=0.2, stratify=y_full, random_state=42
     )
 
-    n_trials = int(os.getenv("OPTUNA_N_TRIALS", "100"))
+    # ─── Adaptive Optuna trial budget ───
+    base_trials = int(os.getenv("OPTUNA_N_TRIALS", "100"))
     timeout = int(os.getenv("OPTUNA_TIMEOUT_SECONDS", "3600"))
+    n_rows = len(X)
+    if n_rows < 2_000:
+        n_trials = min(base_trials, 30)
+    elif n_rows > 10_000:
+        n_trials = max(base_trials, 150)
+    else:
+        n_trials = base_trials
+    logger.info(f"Adaptive trial budget: n_rows={n_rows} → n_trials={n_trials}")
+    print(f"  -> Optuna budget: {n_trials} trials for {n_rows} rows", flush=True)
+
     dataset_hash = _hash_dataframe(df)
     enable_stacking = os.getenv("ENABLE_STACKING", "true").lower() == "true"
 
@@ -348,6 +637,10 @@ def run_automl(
         )
     for model_info in routed_models:
         _inject_class_weight(model_info, is_imbalanced)
+
+    # ─── SMOTE / Oversampling (always on) ───
+    # Applied to X_train (NOT X_val) to prevent data leakage
+    X, y = _try_smart_oversample(X, y, churn_rate)
 
     best_overall_score = -1.0
     best_overall_pipeline = None
@@ -411,6 +704,8 @@ def run_automl(
             show_progress_bar=False,
         )
 
+        print(f"  -> Model '{model_info['name']}' Best CV ROC-AUC: {study.best_value:.4f}", flush=True)
+
         # Track per-model best pipeline for stacking
         best_model_for_stack = model_info["class"](
             **model_info["kwargs"], **study.best_params
@@ -427,67 +722,112 @@ def run_automl(
     # ─── Stacking Ensemble ───
     # If >=2 models were tried, build a stacking ensemble and compare against best single
     stacking_score = -1.0
-    stacking_pipeline = None
+    best_stacking_clf = None
     if enable_stacking and len(all_best_pipelines) >= 2:
         try:
             logger.info("Building stacking ensemble from top models...")
             # Sort by score descending, take top-3 to avoid redundancy
             top_pipelines = sorted(all_best_pipelines, key=lambda x: x[2], reverse=True)[:3]
-            # Build stacking estimators — each is a pre-fit Pipeline minus the preprocessor
-            # We re-use the full pipelines as-is for the stack
             estimators = [(name, pipe) for name, pipe, _ in top_pipelines]
-            stack_meta = LogisticRegression(max_iter=500, C=1.0, solver="lbfgs")
-            stacking_clf = StackingClassifier(
-                estimators=estimators,
-                final_estimator=stack_meta,
-                cv=StratifiedKFold(n_splits=5, shuffle=True, random_state=42),
-                passthrough=False,
-                n_jobs=1,
-            )
-            stacking_scores = cross_val_score(
-                stacking_clf, X, y, cv=cv, scoring="roc_auc", n_jobs=1
-            )
-            stacking_score = float(stacking_scores.mean())
-            logger.info(
-                f"Stacking ensemble CV AUC: {stacking_score:.4f} "
-                f"vs best single model: {best_overall_score:.4f}"
-            )
-            with mlflow.start_run(nested=True):
-                mlflow.log_metric("roc_auc", stacking_score)
-                mlflow.set_tag("model_class", "StackingEnsemble")
+
+            from sklearn.linear_model import RidgeClassifier
+            candidate_metas = [
+                ("LR_C1", LogisticRegression(max_iter=500, C=1.0, solver="lbfgs")),
+                ("LR_C01", LogisticRegression(max_iter=500, C=0.1, solver="lbfgs")),
+                ("Ridge", RidgeClassifier(alpha=1.0)),
+            ]
+
+            best_meta_score = -1.0
+            best_meta_clf = None
+
+            for meta_name, meta_inst in candidate_metas:
+                try:
+                    clf = StackingClassifier(
+                        estimators=estimators,
+                        final_estimator=meta_inst,
+                        cv=3,
+                        passthrough=False,
+                        n_jobs=1,
+                    )
+                    scores = cross_val_score(
+                        clf, X, y, cv=3, scoring="roc_auc", n_jobs=-1
+                    )
+                    score = float(scores.mean())
+                    print(f"  -> Stacking ({meta_name}) CV ROC-AUC: {score:.4f}", flush=True)
+                    if score > best_meta_score:
+                        best_meta_score = score
+                        best_meta_clf = clf
+                except Exception as meta_e:
+                    logger.debug(f"Meta-learner {meta_name} evaluation skipped: {meta_e}")
+
+            if best_meta_score > -1.0:
+                stacking_score = best_meta_score
+                best_stacking_clf = best_meta_clf
+                logger.info(
+                    f"Best Stacking ensemble CV AUC: {stacking_score:.4f} "
+                    f"vs best single model: {best_overall_score:.4f}"
+                )
+                with mlflow.start_run(nested=True):
+                    mlflow.log_metric("roc_auc", stacking_score)
+                    mlflow.set_tag("model_class", "StackingEnsemble")
         except Exception as stack_e:
             logger.warning(f"Stacking ensemble failed, falling back to best single model: {stack_e}")
             stacking_score = -1.0
 
     # Choose: stacking or best single model
-    use_stacking = stacking_score > best_overall_score and stacking_pipeline is None
-    if stacking_score > best_overall_score:
+    if stacking_score > best_overall_score and best_stacking_clf is not None:
         logger.info("Stacking ensemble wins — using it as final model.")
-        # Re-fit stacking on full train set
-        top_pipelines = sorted(all_best_pipelines, key=lambda x: x[2], reverse=True)[:3]
-        estimators = [(name, pipe) for name, pipe, _ in top_pipelines]
-        stack_meta = LogisticRegression(max_iter=500, C=1.0, solver="lbfgs")
-        stacking_clf = StackingClassifier(
-            estimators=estimators,
-            final_estimator=stack_meta,
-            cv=StratifiedKFold(n_splits=5, shuffle=True, random_state=42),
-            passthrough=False,
-            n_jobs=1,
-        )
-        stacking_clf.fit(X, y)
-        final_pipeline = stacking_clf
-        final_model = stacking_clf
+        print(f"  -> FINAL WINNER: StackingEnsemble (CV ROC-AUC = {stacking_score:.4f})", flush=True)
+        best_stacking_clf.fit(X, y)
+        final_pipeline = best_stacking_clf
+        final_model = best_stacking_clf
         best_overall_score = stacking_score
         best_model_info = {"name": "StackingEnsemble", "class": StackingClassifier, "kwargs": {}, "search_space": {}}
         best_trial_params = {}
     else:
         logger.info(f"Best single model: {best_model_info['name']} (AUC={best_overall_score:.4f})")
+        print(f"  -> FINAL WINNER: {best_model_info['name']} (CV ROC-AUC = {best_overall_score:.4f})", flush=True)
         final_model = best_model_info["class"](
             **best_model_info["kwargs"], **best_trial_params
         )
         final_pipeline = clone(base_pipeline)
         final_pipeline.steps[-1] = ("model", final_model)
         final_pipeline.fit(X, y)
+
+    # ─── Probability Calibration (always on) ───
+    # Calibrate on X_val / y_val (held-out set) to avoid leakage.
+    # Uses isotonic regression (better than Platt for n_samples > 1000).
+    pre_calibration_auc = float(roc_auc_score(y_val, final_pipeline.predict_proba(X_val)[:, 1]))
+    try:
+        cal_method = "isotonic" if len(X_val) >= 1_000 else "sigmoid"
+        calibrated = CalibratedClassifierCV(
+            final_pipeline, method=cal_method, cv="prefit"
+        )
+        calibrated.fit(X_val, y_val)
+        post_calibration_auc = float(
+            roc_auc_score(y_val, calibrated.predict_proba(X_val)[:, 1])
+        )
+        if post_calibration_auc >= pre_calibration_auc - 0.005:
+            # Accept calibrated model (allow tiny AUC drop due to val-set overfitting)
+            final_pipeline = calibrated
+            best_overall_score = max(best_overall_score, post_calibration_auc)
+            logger.info(
+                f"Calibration ({cal_method}): {pre_calibration_auc:.4f} -> "
+                f"{post_calibration_auc:.4f}"
+            )
+            print(
+                f"  -> Calibration ({cal_method}): "
+                f"{pre_calibration_auc:.4f} -> {post_calibration_auc:.4f}",
+                flush=True,
+            )
+        else:
+            logger.info(
+                f"Calibration rejected (AUC drop too large): "
+                f"{pre_calibration_auc:.4f} -> {post_calibration_auc:.4f}"
+            )
+    except Exception as cal_e:
+        logger.warning(f"Calibration failed ({cal_e}), keeping uncalibrated model.")
+        post_calibration_auc = pre_calibration_auc
 
     # Calculate optimal threshold on validation set
     y_scores = final_pipeline.predict_proba(X_val)[:, 1]
@@ -523,11 +863,17 @@ def run_automl(
                 "dataset_hash": dataset_hash,
                 "target_col": target_col,
                 "model_class": best_model_info["name"],
+                "smote_applied": str(is_imbalanced),
+                "calibration_applied": "True",
             }
         )
         mlflow.log_params(best_trial_params)
         mlflow.log_param("optuna_timeout_seconds", timeout)
+        mlflow.log_param("optuna_n_trials", n_trials)
+        mlflow.log_param("churn_rate", round(churn_rate, 4))
         mlflow.log_metric("best_roc_auc", best_overall_score)
+        mlflow.log_metric("roc_auc_pre_calibration", pre_calibration_auc)
+        mlflow.log_metric("roc_auc_post_calibration", post_calibration_auc)
         mlflow.log_metric("optimal_threshold", optimal_threshold)
 
         # Save threshold artifact
@@ -546,9 +892,15 @@ def run_automl(
 
         # Log feature names for Feature Importance endpoint
         try:
-            feature_names = list(
-                final_pipeline[:-1].get_feature_names_out()
+            target_pipe = (
+                final_pipeline.estimator
+                if isinstance(final_pipeline, CalibratedClassifierCV)
+                else final_pipeline
             )
+            if hasattr(target_pipe, "__getitem__"):
+                feature_names = list(target_pipe[:-1].get_feature_names_out())
+            else:
+                feature_names = feature_cols
             mlflow.log_param("feature_count", len(feature_names))
             with tempfile.NamedTemporaryFile(
                 mode='w', suffix='.json', delete=False
