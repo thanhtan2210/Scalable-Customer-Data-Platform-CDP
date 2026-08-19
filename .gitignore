@@ -54,12 +54,20 @@ scripts/hadoop/
 # Environment & Secrets
 .env
 
-# Notes & Private Docs
+# Notes & Private Docs / Paper Research (Local Only)
 note.md
 PROJECT_CONTEXT.md
 composite_target_design.md
 .openscience
+.openscience/
+docs/openscience/
+docs/openscience/**
 docs/paper/
+research-state.md
+gap_analysis_results.json
+cross_dataset_results.*
+cross_dataset_results.json
+cross_dataset_results.md
 
 # CatBoost training artifacts
 catboost_info/

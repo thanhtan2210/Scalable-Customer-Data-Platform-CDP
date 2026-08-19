@@ -4,8 +4,11 @@ import io
 import json
 import numpy as np
 import pandas as pd
-from typing import Tuple, Optional, List, Dict
+from typing import Tuple, Optional, List, Dict, Union
 from ...core.storage import storage
+from .representation_analyzer import RepresentationAnalyzer
+from .pcgrad_optimizer import project_conflicting_gradients_continual
+from .coreset_sampler import sample_coreset
 
 try:
     import torch
@@ -32,9 +35,10 @@ class FisherCalculator:
         y_cpi: np.ndarray,
         alpha: float = 0.7,
         beta: float = 0.3,
+        max_samples: int = 500,
     ) -> Dict[str, torch.Tensor]:
         """
-        Calculate diagonal Fisher Information Matrix.
+        Calculate diagonal Fisher Information Matrix efficiently.
         """
         if not _TORCH_AVAILABLE:
             raise ImportError("PyTorch is required to calculate Fisher Matrix.")
@@ -45,16 +49,25 @@ class FisherCalculator:
             if param.requires_grad:
                 fisher[name] = torch.zeros_like(param.data)
 
+        n_samples = len(X)
+        if n_samples == 0:
+            return fisher
+
+        if n_samples > max_samples:
+            # Deterministic/stratified stride
+            step = max(1, n_samples // max_samples)
+            indices = list(range(0, n_samples, step))[:max_samples]
+            X = X[indices]
+            y_binary = y_binary[indices]
+            y_cpi = y_cpi[indices]
+            n_samples = len(X)
+
         X_t = torch.tensor(X, dtype=torch.float32)
         y_bin_t = torch.tensor(y_binary, dtype=torch.float32).unsqueeze(1)
         y_cpi_t = torch.tensor(y_cpi, dtype=torch.float32).unsqueeze(1)
 
         bce_loss_fn = nn.BCEWithLogitsLoss()
         mse_loss_fn = nn.MSELoss()
-
-        n_samples = len(X)
-        if n_samples == 0:
-            return fisher
 
         for i in range(n_samples):
             model.zero_grad()
@@ -104,8 +117,12 @@ class ReplayBuffer:
         dataset_id: str,
         df_new: pd.DataFrame,
         target_col: str,
+        strategy: str = "stratified",
+        feature_cols: Optional[List[str]] = None,
+        model: Optional[nn.Module] = None,
+        preprocessor: Optional[object] = None,
         random_state: int = 42,
-    ):
+    ) -> Dict[str, float]:
         df_old = self.load_from_r2(dataset_id)
         if df_old is not None:
             df_combined = pd.concat([df_old, df_new], ignore_index=True)
@@ -114,9 +131,20 @@ class ReplayBuffer:
 
         if len(df_combined) <= self.max_size:
             self.save_to_r2(dataset_id, df_combined)
-            return
+            return {"mean_shift": 0.0, "buffer_size": float(len(df_combined))}
 
-        if target_col in df_combined.columns:
+        if strategy in ("herding", "kcenter") and feature_cols is not None:
+            df_sampled, diag = sample_coreset(
+                df_combined,
+                feature_cols=feature_cols,
+                target_col=target_col,
+                coreset_size=self.max_size,
+                strategy=strategy,
+                model=model,
+                preprocessor=preprocessor,
+                random_state=random_state,
+            )
+        elif target_col in df_combined.columns:
             counts = df_combined[target_col].value_counts(normalize=True)
             sampled_dfs = []
             for val, pct in counts.items():
@@ -141,15 +169,24 @@ class ReplayBuffer:
                         n=min(len(remainder), needed), random_state=random_state
                     )
                     df_sampled = pd.concat([df_sampled, fill], ignore_index=True)
+            diag = {"mean_shift": 0.0, "buffer_size": float(len(df_sampled))}
         else:
             df_sampled = df_combined.sample(n=self.max_size, random_state=random_state)
+            diag = {"mean_shift": 0.0, "buffer_size": float(len(df_sampled))}
 
         self.save_to_r2(dataset_id, df_sampled)
+        return diag
 
 
 class ContinualMTLTrainer:
     def __init__(
-        self, lambda_ewc: Optional[float] = None, mixing_ratio: Optional[float] = None
+        self,
+        lambda_ewc: Optional[float] = None,
+        mixing_ratio: Optional[float] = None,
+        use_pcgrad: bool = False,
+        use_dynamic_fisher: bool = False,
+        dynamic_fisher_freq: int = 10,
+        coreset_strategy: str = "stratified",
     ):
         if lambda_ewc is None:
             lambda_ewc = float(os.getenv("EWC_LAMBDA", "100.0"))
@@ -159,7 +196,13 @@ class ContinualMTLTrainer:
             mixing_ratio = float(os.getenv("REPLAY_BUFFER_RATIO", "0.2"))
         self.mixing_ratio = mixing_ratio
 
+        self.use_pcgrad = use_pcgrad
+        self.use_dynamic_fisher = use_dynamic_fisher
+        self.dynamic_fisher_freq = dynamic_fisher_freq
+        self.coreset_strategy = coreset_strategy
+
         self.replay_buffer = ReplayBuffer()
+        self.last_history_metrics: Optional[Dict[str, List[float]]] = None
 
     def train(
         self,
@@ -173,9 +216,15 @@ class ContinualMTLTrainer:
         lr: float = 1e-3,
         batch_size: int = 64,
         random_state: int = 42,
-    ) -> Tuple[nn.Module, object, float, float]:
+        df_test_a: Optional[pd.DataFrame] = None,
+        return_history: bool = False,
+    ) -> Union[
+        Tuple[nn.Module, object, float, float],
+        Tuple[nn.Module, object, float, float, Dict[str, List[float]]],
+    ]:
         """
-        Run Continual MTL training loop with train/val splitting and loss curves logging.
+        Run Continual MTL training loop with train/val splitting, PCGrad gradient surgery,
+        Dynamic Fisher recalculation, and diagnostic metrics tracking.
         """
         if not _TORCH_AVAILABLE:
             raise ImportError("PyTorch is required for ContinualMTLTrainer.")
@@ -234,14 +283,25 @@ class ContinualMTLTrainer:
         # 4. Load Replay Buffer
         df_replay = self.replay_buffer.load_from_r2(dataset_id)
 
-        # 5. Mix stratified replay data with new train subset
+        # 5. Mix stratified / coreset replay data with new train subset
         if df_replay is not None and len(df_replay) > 0:
             n_replay = int(
                 len(df_train_sub) * self.mixing_ratio / (1 - self.mixing_ratio)
             )
             n_replay = min(len(df_replay), max(10, n_replay))
 
-            if target_col in df_replay.columns:
+            if self.coreset_strategy in ("herding", "kcenter"):
+                df_replay_sampled, _ = sample_coreset(
+                    df_replay,
+                    feature_cols=feature_cols,
+                    target_col=target_col,
+                    coreset_size=n_replay,
+                    strategy=self.coreset_strategy,
+                    model=model,
+                    preprocessor=preprocessor,
+                    random_state=random_state,
+                )
+            elif target_col in df_replay.columns:
                 counts = df_replay[target_col].value_counts(normalize=True)
                 sampled_dfs = []
                 for val, pct in counts.items():
@@ -283,7 +343,7 @@ class ContinualMTLTrainer:
         else:
             y_mixed_bin_encoded = y_mixed_bin
 
-        # 6. Calculate Fisher Matrix
+        # 6. Calculate Initial Fisher Matrix
         X_replay_raw = df_replay_sampled[feature_cols]
         y_replay_bin = df_replay_sampled[target_col]
         y_replay_cpi = df_replay_sampled[cpi_col]
@@ -305,7 +365,39 @@ class ContinualMTLTrainer:
             model, X_replay_trans, y_replay_bin_encoded.values, y_replay_cpi.values
         )
 
-        # 7. PyTorch Training Loop with EWC penalty
+        # Optional Task A test tensor for generalization gap tracking
+        X_test_a_t = None
+        y_test_a_bin_t = None
+        y_test_a_cpi_t = None
+        if df_test_a is not None:
+            X_ta = preprocessor.transform(df_test_a[feature_cols])
+            if hasattr(X_ta, "toarray"):
+                X_ta = X_ta.toarray()
+            yta_bin = df_test_a[target_col]
+            if not pd.api.types.is_numeric_dtype(yta_bin):
+                unique_classes = sorted(yta_bin.dropna().unique())
+                pos_label = unique_classes[1] if len(unique_classes) > 1 else unique_classes[0]
+                yta_bin_enc = (yta_bin == pos_label).astype(int)
+            else:
+                yta_bin_enc = yta_bin
+            X_test_a_t = torch.tensor(X_ta, dtype=torch.float32)
+            y_test_a_bin_t = torch.tensor(yta_bin_enc.values, dtype=torch.float32).unsqueeze(1)
+            y_test_a_cpi_t = torch.tensor(df_test_a[cpi_col].values, dtype=torch.float32).unsqueeze(1)
+
+        # Replay batch tensor for Taylor residual & generalization gap
+        X_rep_t = torch.tensor(X_replay_trans, dtype=torch.float32)
+        y_rep_bin_t = torch.tensor(y_replay_bin_encoded.values, dtype=torch.float32).unsqueeze(1)
+        y_rep_cpi_t = torch.tensor(y_replay_cpi.values, dtype=torch.float32).unsqueeze(1)
+
+        # Initial true Task A loss at baseline theta_A^*
+        model.eval()
+        with torch.no_grad():
+            l_init_a, o_init_b = model(X_rep_t)
+            bce_fn = nn.BCEWithLogitsLoss()
+            mse_fn = nn.MSELoss()
+            loss_A_star = (0.7 * bce_fn(l_init_a, y_rep_bin_t) + 0.3 * mse_fn(o_init_b, y_rep_cpi_t)).item()
+
+        # 7. PyTorch Training Loop
         model.train()
         X_t = torch.tensor(X_mixed_trans, dtype=torch.float32)
         y_bin_t = torch.tensor(
@@ -315,7 +407,6 @@ class ContinualMTLTrainer:
 
         dataset = TensorDataset(X_t, y_bin_t, y_cpi_t)
 
-        # Seed generator for DataLoader shuffle
         g = torch.Generator()
         g.manual_seed(random_state)
         dataloader = DataLoader(
@@ -326,17 +417,38 @@ class ContinualMTLTrainer:
         bce_loss_fn = nn.BCEWithLogitsLoss()
         mse_loss_fn = nn.MSELoss()
 
+        history_metrics: Dict[str, List[float]] = {
+            "train_loss": [],
+            "val_loss": [],
+            "cosine_similarity": [],
+            "conflict_rate": [],
+            "effective_rank": [],
+            "taylor_residual": [],
+            "generalization_gap": [],
+        }
+
         for epoch in range(epochs):
+            # Dynamic Fisher Re-estimation
+            if self.use_dynamic_fisher and epoch > 0 and epoch % self.dynamic_fisher_freq == 0:
+                fisher = FisherCalculator.calculate_fisher(
+                    model, X_replay_trans, y_replay_bin_encoded.values, y_replay_cpi.values
+                )
+                for name, param in model.named_parameters():
+                    param_old[name] = param.data.clone()
+
             total_train_loss = 0.0
             batches_count = 0
+            epoch_cos_sims = []
+            epoch_conflicts = []
 
             for batch_x, batch_y_bin, batch_y_cpi in dataloader:
                 if len(batch_x) <= 1:
                     continue
-                optimizer.zero_grad()
+
                 logits_a, out_b = model(batch_x)
                 loss_a = bce_loss_fn(logits_a, batch_y_bin)
                 loss_b = mse_loss_fn(out_b, batch_y_cpi)
+                loss_task = 0.7 * loss_a + 0.3 * loss_b
 
                 # Compute EWC loss
                 ewc_loss = 0.0
@@ -345,18 +457,29 @@ class ContinualMTLTrainer:
                         ewc_loss += (
                             fisher[name] * (param - param_old[name]) ** 2
                         ).sum()
+                loss_ewc_scaled = (self.lambda_ewc / 2.0) * ewc_loss
 
-                # MTL Churn Model uses BCE weight 0.7, MSE weight 0.3
-                loss = 0.7 * loss_a + 0.3 * loss_b + (self.lambda_ewc / 2.0) * ewc_loss
-                loss.backward()
-                optimizer.step()
+                if self.use_pcgrad and self.lambda_ewc > 0:
+                    optimizer.zero_grad()
+                    diag_pcgrad = project_conflicting_gradients_continual(
+                        model, loss_task, loss_ewc_scaled, scope="shared"
+                    )
+                    optimizer.step()
+                    epoch_cos_sims.append(diag_pcgrad["cosine_similarity"])
+                    epoch_conflicts.append(diag_pcgrad["conflict_detected"])
+                    total_train_loss += (loss_task.item() + loss_ewc_scaled.item())
+                else:
+                    optimizer.zero_grad()
+                    loss = loss_task + loss_ewc_scaled
+                    loss.backward()
+                    optimizer.step()
+                    total_train_loss += loss.item()
 
-                total_train_loss += loss.item()
                 batches_count += 1
 
             epoch_train_loss = total_train_loss / max(1, batches_count)
 
-            # Evaluate validation loss
+            # Evaluate validation loss & representation metrics
             model.eval()
             with torch.no_grad():
                 logits_val_a, out_val_b = model(X_val_t)
@@ -373,26 +496,58 @@ class ContinualMTLTrainer:
                     + 0.3 * val_loss_b
                     + (self.lambda_ewc / 2.0) * val_ewc_loss
                 )
+
+                # 1. Effective Rank on validation hidden features
+                hidden_acts = model.get_embeddings(X_val_t)
+                erank = RepresentationAnalyzer.compute_effective_rank(hidden_acts)
+
+                # 2. Taylor Residual Delta_t = |L_true(theta_t) - (L(theta*) + 0.5 * ewc_penalty)|
+                logits_rep_a, out_rep_b = model(X_rep_t)
+                current_true_L_A = (0.7 * bce_fn(logits_rep_a, y_rep_bin_t) + 0.3 * mse_fn(out_rep_b, y_rep_cpi_t)).item()
+                taylor_approx_L_A = loss_A_star + val_ewc_loss.item()
+                taylor_res = abs(current_true_L_A - taylor_approx_L_A)
+
+                # 3. Generalization Gap: Loss(D_{A, test}) - Loss(M_A)
+                if X_test_a_t is not None:
+                    logits_test_a, out_test_b = model(X_test_a_t)
+                    loss_test_a = (0.7 * bce_fn(logits_test_a, y_test_a_bin_t) + 0.3 * mse_fn(out_test_b, y_test_a_cpi_t)).item()
+                    gen_gap = loss_test_a - current_true_L_A
+                else:
+                    gen_gap = 0.0
+
             model.train()
 
-            # Learning curve text printout
+            avg_cos = float(np.mean(epoch_cos_sims)) if epoch_cos_sims else 0.0
+            avg_conflict = float(np.mean(epoch_conflicts)) if epoch_conflicts else 0.0
+
+            history_metrics["train_loss"].append(epoch_train_loss)
+            history_metrics["val_loss"].append(float(val_loss.item()))
+            history_metrics["cosine_similarity"].append(avg_cos)
+            history_metrics["conflict_rate"].append(avg_conflict)
+            history_metrics["effective_rank"].append(erank)
+            history_metrics["taylor_residual"].append(taylor_res)
+            history_metrics["generalization_gap"].append(gen_gap)
+
             if epoch == 0 or epoch == epochs - 1 or (epoch + 1) % 10 == 0:
                 print(
-                    f"Epoch {epoch + 1:2d}: train_loss={epoch_train_loss:.4f}, val_loss={val_loss.item():.4f}"
+                    f"Epoch {epoch + 1:2d}: train_loss={epoch_train_loss:.4f}, val_loss={val_loss.item():.4f}, erank={erank:.2f}, cos={avg_cos:.3f}"
                 )
 
-        # Update Replay Buffer with new data using random_state
+        # Update Replay Buffer with chosen strategy
         self.replay_buffer.update(
-            dataset_id, df_new, target_col, random_state=random_state
+            dataset_id,
+            df_new,
+            target_col,
+            strategy=self.coreset_strategy,
+            feature_cols=feature_cols,
+            model=model,
+            preprocessor=preprocessor,
+            random_state=random_state,
         )
 
-        # Assign updated model back into prior_mtl_model
         prior_mtl_model.model = model
-
-        # Create updated final pipeline
         final_pipeline = pipeline
 
-        # Calculate optimal threshold on validation set of df_new
         X_new_raw = df_new[feature_cols]
         y_new_bin = df_new[target_col]
 
@@ -409,7 +564,8 @@ class ContinualMTLTrainer:
         else:
             y_new_bin_encoded = y_new_bin
 
-        # Optimal Threshold
+        self.last_history_metrics = history_metrics
+
         y_scores = prior_mtl_model.predict_proba(X_new_trans)[:, 1]
         from sklearn.metrics import precision_recall_curve, roc_auc_score
 
@@ -420,4 +576,6 @@ class ContinualMTLTrainer:
         optimal_threshold = float(thresholds[f1_scores[:-1].argmax()])
         best_roc_auc = float(roc_auc_score(y_new_bin_encoded.values, y_scores))
 
+        if return_history:
+            return model, final_pipeline, best_roc_auc, optimal_threshold, history_metrics
         return model, final_pipeline, best_roc_auc, optimal_threshold
