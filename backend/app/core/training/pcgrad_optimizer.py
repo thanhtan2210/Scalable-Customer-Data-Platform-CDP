@@ -94,6 +94,7 @@ def project_conflicting_gradients_continual(
     loss_task: torch.Tensor,
     loss_ewc: torch.Tensor,
     scope: str = "shared",
+    norm_calibrate: bool = False,
     eps: float = 1e-8,
 ) -> Dict[str, float]:
     """
@@ -106,6 +107,7 @@ def project_conflicting_gradients_continual(
         loss_task: Task loss (e.g. mixed Task B + Replay loss, or pure Replay loss).
         loss_ewc: EWC quadratic regularization loss.
         scope: 'shared' (apply PCGrad on shared backbone only) or 'all' (all parameters).
+        norm_calibrate: If True, caps ||g_ewc|| <= ||g_task|| to prevent scale-asymmetric attenuation.
         eps: Small stability constant.
 
     Returns:
@@ -162,7 +164,12 @@ def project_conflicting_gradients_continual(
 
     conflict_detected = 1.0 if raw_cos < 0 else 0.0
 
-    # 4. Apply PCGrad projection on flattened scope
+    # 4. Optional Norm-Calibration: prevent ||g_ewc|| from dominating ||g_task||
+    if norm_calibrate and norm_ewc > eps and norm_task > eps:
+        scale = min(1.0, (norm_task / norm_ewc).item())
+        flat_ewc = flat_ewc * scale
+
+    # 5. Apply PCGrad projection on flattened scope
     proj_task, proj_ewc = apply_pcgrad_projection(flat_task, flat_ewc, eps=eps)
     proj_total = proj_task + proj_ewc
     proj_inner = torch.dot(proj_task, flat_ewc).item()
@@ -182,3 +189,91 @@ def project_conflicting_gradients_continual(
         "norm_ewc": float(norm_ewc.item()),
         "projected_inner": float(proj_inner),
     }
+
+
+class PCGradOptimizer:
+    """
+    PCGrad Optimizer Wrapper (Yu et al., NeurIPS 2020 / Tri-PCGrad Extension)
+    Supports multi-objective gradient surgery with optional Norm-Calibration:
+      \\hat{g}_EWC = min(1.0, ||g_curr|| / ||g_EWC||) * g_EWC
+    """
+    def __init__(self, optimizer: torch.optim.Optimizer, norm_calibrate: bool = False, eps: float = 1e-8):
+        self._optim = optimizer
+        self.norm_calibrate = norm_calibrate
+        self.eps = eps
+
+    @property
+    def param_groups(self):
+        return self._optim.param_groups
+
+    def zero_grad(self):
+        self._optim.zero_grad()
+
+    def step(self):
+        return self._optim.step()
+
+    def pc_backward(self, objectives: List[torch.Tensor]):
+        """
+        Executes projected conflicting gradients across multiple loss objectives.
+        Algorithm 1: Tri-PCGrad / Multi-Vector Gradient Surgery
+        """
+        if not _TORCH_AVAILABLE:
+            raise ImportError("PyTorch is required.")
+
+        params = []
+        for group in self._optim.param_groups:
+            for p in group["params"]:
+                if p.requires_grad:
+                    params.append(p)
+
+        # 1. Compute individual gradient vectors for each objective
+        num_tasks = len(objectives)
+        task_grads = []
+
+        for i, obj in enumerate(objectives):
+            self._optim.zero_grad()
+            if i < num_tasks - 1:
+                obj.backward(retain_graph=True)
+            else:
+                obj.backward()
+
+            g_flat = []
+            for p in params:
+                if p.grad is not None:
+                    g_flat.append(p.grad.data.view(-1).clone())
+                else:
+                    g_flat.append(torch.zeros(p.numel(), device=p.device, dtype=p.dtype))
+            task_grads.append(torch.cat(g_flat))
+
+        # Optional Norm-Calibration (Module 2 formulation: cap regularizer norm by current task norm)
+        if self.norm_calibrate and num_tasks >= 2:
+            # Assuming last objective is regularization (e.g. EWC)
+            curr_norm = task_grads[0].norm()
+            reg_norm = task_grads[-1].norm()
+            if reg_norm > self.eps and curr_norm > self.eps:
+                scale = min(1.0, (curr_norm / reg_norm).item())
+                task_grads[-1] = task_grads[-1] * scale
+
+        # 2. Random permutation projected gradients (Algorithm 1)
+        projected_grads = [g.clone() for g in task_grads]
+        order = list(range(num_tasks))
+        np.random.shuffle(order)
+
+        for i in order:
+            for j in order:
+                if i != j:
+                    dot = torch.dot(projected_grads[i], task_grads[j])
+                    if dot < 0:
+                        j_norm_sq = torch.dot(task_grads[j], task_grads[j]) + self.eps
+                        projected_grads[i] = projected_grads[i] - (dot / j_norm_sq) * task_grads[j]
+
+        # 3. Sum projected gradients and assign back to params
+        merged_grad = torch.stack(projected_grads).sum(dim=0)
+        self._optim.zero_grad()
+
+        offset = 0
+        for p in params:
+            numel = p.numel()
+            p.grad = merged_grad[offset : offset + numel].view_as(p).clone()
+            offset += numel
+
